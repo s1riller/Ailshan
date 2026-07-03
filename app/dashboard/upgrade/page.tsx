@@ -1,7 +1,13 @@
 import { CheckCircle2, Crown } from "lucide-react";
 
 import { requireActiveProfile } from "@/lib/authz";
-import { FREE_PHOTO_LIMIT, FREE_STORAGE_DAYS, PRO_PHOTO_LIMIT, PRO_STORAGE_DAYS, proLabel } from "@/lib/plans";
+import {
+  FREE_PHOTO_LIMIT,
+  FREE_STORAGE_DAYS,
+  PRO_PHOTO_LIMIT,
+  PRO_STORAGE_DAYS,
+  proLabel,
+} from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +31,8 @@ export default async function UpgradePage() {
         <Badge>{proLabel(profile.plan)}</Badge>
         <h1 className="mt-3 text-2xl font-semibold">Тарифы Ailshan</h1>
         <p className="text-sm text-muted-foreground">
-          Базовый сценарий остается бесплатным. Платными становятся удобства после того, как сервис уже дал ценность.
+          Базовый сценарий остается бесплатным. Платными становятся удобства
+          после того, как сервис уже дал ценность.
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
@@ -64,9 +71,9 @@ export default async function UpgradePage() {
             <Button className="w-full" disabled>
               Оплата будет подключена позже
             </Button>
-            <p className="text-xs text-muted-foreground">
+            {/* <p className="text-xs text-muted-foreground">
               Пока биллинг не подключен, Pro включается вручную супер-админом в Supabase.
-            </p>
+            </p> */}
           </CardContent>
         </Card>
       </div>
