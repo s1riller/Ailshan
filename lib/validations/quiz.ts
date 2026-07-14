@@ -5,6 +5,10 @@ export const createQuizSchema = z.object({
   title: z.string().trim().min(3, "Введите название квиза").max(100),
 });
 
+export const updateQuizSchema = createQuizSchema.extend({
+  quizId: z.string().uuid(),
+});
+
 export const quizQuestionSchema = z.object({
   eventId: z.string().uuid(),
   quizId: z.string().uuid(),
@@ -12,6 +16,10 @@ export const quizQuestionSchema = z.object({
   answers: z.array(z.string().trim().min(1, "Заполните все варианты").max(200)).length(4),
   correctAnswerIndex: z.coerce.number().int().min(0).max(3),
   points: z.coerce.number().int().min(1).max(1000),
+});
+
+export const updateQuizQuestionSchema = quizQuestionSchema.extend({
+  questionId: z.string().uuid(),
 });
 
 export const quizControlSchema = z.object({

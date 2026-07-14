@@ -889,6 +889,7 @@ export default async function LivePage({
       {quiz && liveQuizStatus ? (
         <QuizLiveOverlay
           title={quiz.title}
+          joinUrl={`${publicUrl}/play`}
           status={liveQuizStatus}
           startsAt={quiz.starts_at}
           question={liveQuizQuestion?.question_text ?? null}

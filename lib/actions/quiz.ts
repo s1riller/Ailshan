@@ -14,6 +14,8 @@ import {
   quizControlSchema,
   quizQuestionSchema,
   startQuizSchema,
+  updateQuizQuestionSchema,
+  updateQuizSchema,
 } from "@/lib/validations/quiz";
 
 const teamCookie = (eventId: string) => `ailshan_quiz_team_${eventId}`;
@@ -90,6 +92,24 @@ export async function createQuizAction(formData: FormData) {
   revalidatePath(`/dashboard/events/${parsed.data.eventId}`);
 }
 
+export async function updateQuizAction(formData: FormData) {
+  const parsed = updateQuizSchema.safeParse({
+    eventId: formData.get("eventId"),
+    quizId: formData.get("quizId"),
+    title: formData.get("title"),
+  });
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Проверьте название квиза");
+
+  const { admin, event } = await requireOwnedQuiz(parsed.data.eventId, parsed.data.quizId);
+  const { error } = await admin
+    .from("event_quizzes")
+    .update({ title: parsed.data.title, updated_at: new Date().toISOString() })
+    .eq("id", parsed.data.quizId)
+    .eq("event_id", parsed.data.eventId);
+  if (error) throw new Error(error.message);
+  revalidateQuiz(parsed.data.eventId, event.custom_slug || event.slug);
+}
+
 export async function addQuizQuestionAction(formData: FormData) {
   const parsed = quizQuestionSchema.safeParse({
     eventId: formData.get("eventId"),
@@ -120,6 +140,33 @@ export async function addQuizQuestionAction(formData: FormData) {
   });
   if (error) throw new Error(error.message);
 
+  revalidatePath(`/dashboard/events/${parsed.data.eventId}`);
+}
+
+export async function updateQuizQuestionAction(formData: FormData) {
+  const parsed = updateQuizQuestionSchema.safeParse({
+    eventId: formData.get("eventId"),
+    quizId: formData.get("quizId"),
+    questionId: formData.get("questionId"),
+    question: formData.get("question"),
+    answers: [formData.get("answer0"), formData.get("answer1"), formData.get("answer2"), formData.get("answer3")],
+    correctAnswerIndex: formData.get("correctAnswerIndex"),
+    points: formData.get("points"),
+  });
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Проверьте вопрос");
+
+  const { admin } = await requireOwnedQuiz(parsed.data.eventId, parsed.data.quizId);
+  const { error } = await admin
+    .from("quiz_questions")
+    .update({
+      question_text: parsed.data.question,
+      answers: parsed.data.answers,
+      correct_answer_index: parsed.data.correctAnswerIndex,
+      points: parsed.data.points,
+    })
+    .eq("id", parsed.data.questionId)
+    .eq("quiz_id", parsed.data.quizId);
+  if (error) throw new Error(error.message);
   revalidatePath(`/dashboard/events/${parsed.data.eventId}`);
 }
 
@@ -211,7 +258,22 @@ export async function resetQuizAction(formData: FormData) {
   const parsed = quizControlSchema.safeParse({ eventId: formData.get("eventId"), quizId: formData.get("quizId") });
   if (!parsed.success) throw new Error("Некорректный квиз");
   const { admin, event } = await requireOwnedQuiz(parsed.data.eventId, parsed.data.quizId);
+  const { data: questions = [] } = await admin.from("quiz_questions").select("id").eq("quiz_id", parsed.data.quizId);
+  const questionIds = (questions ?? []).map((question) => question.id);
+  if (questionIds.length) {
+    const { error: answersError } = await admin.from("quiz_answers").delete().in("question_id", questionIds);
+    if (answersError) throw new Error(answersError.message);
+  }
   const { error } = await admin.from("event_quizzes").update({ status: "draft", starts_at: null, current_question_index: 0, updated_at: new Date().toISOString() }).eq("id", parsed.data.quizId);
+  if (error) throw new Error(error.message);
+  revalidateQuiz(parsed.data.eventId, event.custom_slug || event.slug);
+}
+
+export async function deleteQuizAction(formData: FormData) {
+  const parsed = quizControlSchema.safeParse({ eventId: formData.get("eventId"), quizId: formData.get("quizId") });
+  if (!parsed.success) throw new Error("Некорректный квиз");
+  const { admin, event } = await requireOwnedQuiz(parsed.data.eventId, parsed.data.quizId);
+  const { error } = await admin.from("event_quizzes").delete().eq("id", parsed.data.quizId).eq("event_id", parsed.data.eventId);
   if (error) throw new Error(error.message);
   revalidateQuiz(parsed.data.eventId, event.custom_slug || event.slug);
 }

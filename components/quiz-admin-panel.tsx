@@ -1,22 +1,26 @@
 import Link from "next/link";
-import { BellRing, CirclePlay, ExternalLink, Plus, RotateCcw, Square, Trash2, Trophy, Users } from "lucide-react";
+import { BellRing, CirclePlay, ExternalLink, Pencil, Plus, RotateCcw, Square, Trash2, Trophy, Users } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
 import { QuizCountdown } from "@/components/quiz-countdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   addQuizQuestionAction,
   createQuizAction,
+  deleteQuizAction,
   deleteQuizQuestionAction,
   finishQuizAction,
   nextQuizQuestionAction,
   resetQuizAction,
   startQuizAction,
+  updateQuizAction,
+  updateQuizQuestionAction,
 } from "@/lib/actions/quiz";
 
 type Quiz = {
@@ -94,7 +98,22 @@ export function QuizAdminPanel({
                 <CardTitle>{quiz.title}</CardTitle>
                 <CardDescription>Пульт ведущего. Гостевые страницы обновляются автоматически.</CardDescription>
               </div>
-              <Badge variant={effectiveStatus === "active" ? "default" : "secondary"}>{statusLabels[effectiveStatus]}</Badge>
+              <div className="flex items-center gap-2">
+                {(quiz.status === "draft" || quiz.status === "finished") ? (
+                  <Dialog>
+                    <DialogTrigger asChild><Button variant="ghost" size="icon" title="Редактировать название"><Pencil className="h-4 w-4" /></Button></DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Название квиза</DialogTitle><DialogDescription>Название обновится у ведущего, гостей и на live-экране.</DialogDescription></DialogHeader>
+                      <form action={updateQuizAction} className="space-y-4">
+                        <input type="hidden" name="eventId" value={eventId} /><input type="hidden" name="quizId" value={quiz.id} />
+                        <Input name="title" defaultValue={quiz.title} required />
+                        <DialogFooter><Button type="submit">Сохранить</Button></DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                ) : null}
+                <Badge variant={effectiveStatus === "active" ? "default" : "secondary"}>{statusLabels[effectiveStatus]}</Badge>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -144,12 +163,17 @@ export function QuizAdminPanel({
               </div>
             ) : null}
 
-            {quiz.status === "finished" ? (
-              <form action={resetQuizAction}>
-                <input type="hidden" name="eventId" value={eventId} />
-                <input type="hidden" name="quizId" value={quiz.id} />
-                <Button type="submit" variant="outline"><RotateCcw className="h-4 w-4" />Вернуть в подготовку</Button>
-              </form>
+            {quiz.status !== "draft" ? (
+              <Dialog>
+                <DialogTrigger asChild><Button variant="outline"><RotateCcw className="h-4 w-4" />Перезапустить квиз</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Перезапустить квиз?</DialogTitle><DialogDescription>Все ответы и баллы будут очищены. Вопросы, команды и участники сохранятся, а квиз вернётся в режим подготовки.</DialogDescription></DialogHeader>
+                  <form action={resetQuizAction}>
+                    <input type="hidden" name="eventId" value={eventId} /><input type="hidden" name="quizId" value={quiz.id} />
+                    <DialogFooter><Button type="submit" variant="destructive"><RotateCcw className="h-4 w-4" />Очистить результаты</Button></DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             ) : null}
           </CardContent>
         </Card>
@@ -197,10 +221,28 @@ export function QuizAdminPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div><div className="text-xs text-muted-foreground">Вопрос {index + 1} · {question.points} баллов</div><div className="mt-1 font-medium">{question.question_text}</div></div>
                     {(quiz.status === "draft" || quiz.status === "finished") ? (
-                      <form action={deleteQuizQuestionAction}>
-                        <input type="hidden" name="eventId" value={eventId} /><input type="hidden" name="quizId" value={quiz.id} /><input type="hidden" name="questionId" value={question.id} />
-                        <Button type="submit" variant="ghost" size="icon" title="Удалить вопрос"><Trash2 className="h-4 w-4" /></Button>
-                      </form>
+                      <div className="flex items-center">
+                        <Dialog>
+                          <DialogTrigger asChild><Button variant="ghost" size="icon" title="Редактировать вопрос"><Pencil className="h-4 w-4" /></Button></DialogTrigger>
+                          <DialogContent className="max-h-[90vh] overflow-y-auto">
+                            <DialogHeader><DialogTitle>Редактировать вопрос {index + 1}</DialogTitle><DialogDescription>Измените текст, варианты, правильный ответ или баллы.</DialogDescription></DialogHeader>
+                            <form action={updateQuizQuestionAction} className="space-y-3">
+                              <input type="hidden" name="eventId" value={eventId} /><input type="hidden" name="quizId" value={quiz.id} /><input type="hidden" name="questionId" value={question.id} />
+                              <Textarea name="question" defaultValue={question.question_text} required />
+                              {question.answers.map((answer, answerIndex) => <Input key={answerIndex} name={`answer${answerIndex}`} defaultValue={answer} required />)}
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-2"><Label>Правильный вариант</Label><select name="correctAnswerIndex" defaultValue={question.correct_answer_index} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{[0, 1, 2, 3].map((answerIndex) => <option key={answerIndex} value={answerIndex}>{String.fromCharCode(65 + answerIndex)}</option>)}</select></div>
+                                <div className="space-y-2"><Label>Баллы</Label><Input name="points" type="number" min="1" max="1000" defaultValue={question.points} required /></div>
+                              </div>
+                              <DialogFooter><Button type="submit">Сохранить вопрос</Button></DialogFooter>
+                            </form>
+                          </DialogContent>
+                        </Dialog>
+                        <form action={deleteQuizQuestionAction}>
+                          <input type="hidden" name="eventId" value={eventId} /><input type="hidden" name="quizId" value={quiz.id} /><input type="hidden" name="questionId" value={question.id} />
+                          <Button type="submit" variant="ghost" size="icon" title="Удалить вопрос"><Trash2 className="h-4 w-4" /></Button>
+                        </form>
+                      </div>
                     ) : null}
                   </div>
                   <div className="mt-3 grid gap-1 text-sm sm:grid-cols-2">{question.answers.map((answer, answerIndex) => <div key={answerIndex} className={answerIndex === question.correct_answer_index ? "font-medium text-emerald-700" : "text-muted-foreground"}>{String.fromCharCode(65 + answerIndex)}. {answer}</div>)}</div>
@@ -221,6 +263,18 @@ export function QuizAdminPanel({
               </div>
             ))}
             {teams.length === 0 ? <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">Команды появятся, когда гости откроют ссылку квиза.</div> : null}
+            {(quiz.status === "draft" || quiz.status === "finished") ? (
+              <Dialog>
+                <DialogTrigger asChild><Button variant="ghost" className="mt-4 w-full text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" />Удалить весь квиз</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Удалить квиз полностью?</DialogTitle><DialogDescription>Будут удалены вопросы, команды, участники и все результаты. Это действие нельзя отменить.</DialogDescription></DialogHeader>
+                  <form action={deleteQuizAction}>
+                    <input type="hidden" name="eventId" value={eventId} /><input type="hidden" name="quizId" value={quiz.id} />
+                    <DialogFooter><Button type="submit" variant="destructive">Удалить квиз</Button></DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : null}
           </CardContent>
         </Card>
       </div>

@@ -1,11 +1,13 @@
 import { Clock3, Trophy, Users } from "lucide-react";
 
+import { EventQrCode } from "@/components/event-qr-code";
 import { QuizCountdown } from "@/components/quiz-countdown";
 
 type QuizLiveStatus = "draft" | "countdown" | "active" | "finished";
 
 export function QuizLiveOverlay({
   title,
+  joinUrl,
   status,
   startsAt,
   question,
@@ -15,6 +17,7 @@ export function QuizLiveOverlay({
   teams,
 }: {
   title: string;
+  joinUrl: string;
   status: QuizLiveStatus;
   startsAt: string | null;
   question: string | null;
@@ -28,12 +31,23 @@ export function QuizLiveOverlay({
   if (status === "countdown" && startsAt) {
     return (
       <section className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 px-8 text-center text-white backdrop-blur-xl">
-        <div className="max-w-5xl">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/10"><Clock3 className="h-8 w-8" /></div>
-          <p className="mt-7 text-lg font-medium uppercase tracking-[0.24em] text-white/55">Приготовьтесь</p>
-          <h1 className="mt-4 text-5xl font-semibold lg:text-7xl">{title}</h1>
-          <QuizCountdown target={startsAt} className="mt-8 block text-[12rem] font-semibold leading-none lg:text-[16rem]" />
-          <p className="mt-7 text-2xl text-white/65">Соберите команду рядом. Вопрос появится на телефонах и на этом экране.</p>
+        <div className="grid w-full max-w-7xl items-center gap-12 lg:grid-cols-[1fr_360px]">
+          <div>
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/10"><Clock3 className="h-8 w-8" /></div>
+            <p className="mt-7 text-lg font-medium uppercase tracking-[0.24em] text-white/55">Приготовьтесь</p>
+            <h1 className="mt-4 text-5xl font-semibold lg:text-7xl">{title}</h1>
+            <QuizCountdown target={startsAt} className="mt-8 block text-[10rem] font-semibold leading-none lg:text-[14rem]" />
+            <p className="mt-7 text-xl text-white/65">Соберите команду рядом. Вопрос появится на телефонах и на этом экране.</p>
+          </div>
+          <aside className="mx-auto w-full max-w-sm rounded-lg border border-white/15 bg-white/10 p-6 text-center shadow-2xl">
+            <div className="scale-110"><EventQrCode value={joinUrl} title="Вступить в квиз" color="#ffffff" /></div>
+            <h2 className="mt-6 text-2xl font-semibold">Подключайтесь сейчас</h2>
+            <div className="mt-4 space-y-2 text-left text-sm text-white/65">
+              <p>1. Наведите камеру на QR-код</p>
+              <p>2. Создайте команду или введите код друзей</p>
+              <p>3. Разрешите уведомление и ждите вопрос</p>
+            </div>
+          </aside>
         </div>
       </section>
     );
