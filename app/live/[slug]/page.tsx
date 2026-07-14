@@ -1,9 +1,10 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { Heart } from "lucide-react";
+import { Gamepad2, Heart, Trophy } from "lucide-react";
 
 import { EventQrCode } from "@/components/event-qr-code";
 import { LiveAutoRefresh } from "@/components/live-auto-refresh";
+import { QuizLiveOverlay } from "@/components/quiz-live-overlay";
 import { getSiteUrl } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -19,6 +20,15 @@ type LivePhoto = {
 type LiveLayout = "masonry" | "featured" | "slideshow" | "compact";
 type LiveTransition = "fade" | "slide" | "zoom" | "stories";
 type LiveQrEffect = "fade" | "slide" | "pulse" | "stories";
+
+type LiveGameEntry = {
+  id: string;
+  game_type: string;
+  guest_name: string;
+  content: string;
+  metadata: Record<string, string> | null;
+  score: number | null;
+};
 
 const allowedLayouts: LiveLayout[] = [
   "masonry",
@@ -454,6 +464,80 @@ function LiveQrOverlay({
   );
 }
 
+function LiveGameHighlights({ entries }: { entries: LiveGameEntry[] }) {
+  if (entries.length === 0) return null;
+
+  const teamScores = Array.from(
+    entries
+      .filter((entry) => entry.game_type === "team_battle")
+      .reduce((map, entry) => {
+        const team = entry.metadata?.team || "Команда";
+        map.set(team, (map.get(team) ?? 0) + (entry.score ?? 0));
+        return map;
+      }, new Map<string, number>()),
+  )
+    .map(([team, score]) => ({ team, score }))
+    .sort((a, b) => b.score - a.score);
+
+  const pollResults = Array.from(
+    entries
+      .filter((entry) => entry.game_type === "poll")
+      .reduce((map, entry) => {
+        map.set(entry.content, (map.get(entry.content) ?? 0) + 1);
+        return map;
+      }, new Map<string, number>()),
+  )
+    .map(([choice, count]) => ({ choice, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const latest = entries.filter((entry) => entry.game_type !== "team_battle").slice(0, 2);
+
+  return (
+    <aside className="pointer-events-none fixed bottom-28 left-6 z-40 hidden w-80 space-y-3 text-white xl:block">
+      <div className="rounded-2xl border border-white/10 bg-black/45 p-4 shadow-2xl backdrop-blur-xl">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <Gamepad2 className="h-4 w-4 text-white/70" />
+          Интерактив гостей
+        </div>
+
+        {teamScores[0] ? (
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/10 p-3">
+            <div className="flex items-center gap-2 text-xs uppercase text-white/55">
+              <Trophy className="h-3.5 w-3.5" />
+              Лидер команд
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="truncate font-semibold">{teamScores[0].team}</span>
+              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-black">
+                {teamScores[0].score}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        {pollResults[0] ? (
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/10 p-3">
+            <div className="text-xs uppercase text-white/55">Опрос</div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="truncate font-semibold">{pollResults[0].choice}</span>
+              <span className="text-sm text-white/70">{pollResults[0].count}</span>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="space-y-2">
+          {latest.map((entry) => (
+            <div key={entry.id} className="rounded-xl border border-white/10 bg-white/10 p-3">
+              <div className="text-xs text-white/55">{entry.guest_name}</div>
+              <div className="mt-1 line-clamp-2 text-sm font-medium">{entry.content}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 export default async function LivePage({
   params,
 }: {
@@ -516,6 +600,53 @@ export default async function LivePage({
       };
     }),
   );
+
+  const { data: gameEntriesData = [] } = await supabase
+    .from("game_entries")
+    .select("id, game_type, guest_name, content, metadata, score, created_at")
+    .eq("event_id", event.id)
+    .eq("status", "approved")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const gameEntries = (gameEntriesData ?? []) as LiveGameEntry[];
+
+  const { data: quiz } = await supabase
+    .from("event_quizzes")
+    .select("id, title, status, starts_at, current_question_index")
+    .eq("event_id", event.id)
+    .maybeSingle();
+  if (quiz?.status === "countdown") {
+    const { data: activated } = await supabase.rpc("activate_due_quiz", { p_quiz_id: quiz.id });
+    if (activated) quiz.status = "active";
+  }
+  const { data: quizQuestionRows = [] } = quiz
+    ? await supabase
+        .from("quiz_questions")
+        .select("id, question_text, answers, position")
+        .eq("quiz_id", quiz.id)
+        .order("position")
+    : { data: [] };
+  const { data: quizTeamRows = [] } = quiz
+    ? await supabase.from("quiz_teams").select("id, name").eq("quiz_id", quiz.id)
+    : { data: [] };
+  const liveTeamIds = (quizTeamRows ?? []).map((team) => team.id);
+  const liveQuestionIds = (quizQuestionRows ?? []).map((question) => question.id);
+  const { data: liveMemberRows = [] } = liveTeamIds.length
+    ? await supabase.from("quiz_team_members").select("team_id").in("team_id", liveTeamIds)
+    : { data: [] };
+  const { data: liveAnswerRows = [] } = liveQuestionIds.length
+    ? await supabase.from("quiz_answers").select("team_id, points").in("question_id", liveQuestionIds)
+    : { data: [] };
+  const liveQuizTeams = (quizTeamRows ?? [])
+    .map((team) => ({
+      ...team,
+      members: (liveMemberRows ?? []).filter((member) => member.team_id === team.id).length,
+      score: (liveAnswerRows ?? []).filter((answer) => answer.team_id === team.id).reduce((sum, answer) => sum + answer.points, 0),
+    }))
+    .sort((a, b) => b.score - a.score);
+  const liveQuizQuestions = (quizQuestionRows ?? []).map((question) => ({ ...question, answers: question.answers as string[] }));
+  const liveQuizStatus = quiz?.status;
+  const liveQuizQuestion = quiz ? liveQuizQuestions[quiz.current_question_index] : null;
 
   const layout = getSafeLayout(event.live_layout);
   const transition = getSafeTransition(event.live_transition);
@@ -752,6 +883,21 @@ export default async function LivePage({
         qrEnabled={event.show_qr_on_live ?? false}
         qrInterval={qrInterval}
       />
+
+      {false ? <LiveGameHighlights entries={gameEntries} /> : null}
+
+      {quiz && liveQuizStatus ? (
+        <QuizLiveOverlay
+          title={quiz.title}
+          status={liveQuizStatus}
+          startsAt={quiz.starts_at}
+          question={liveQuizQuestion?.question_text ?? null}
+          answers={liveQuizQuestion?.answers ?? []}
+          questionIndex={quiz.current_question_index}
+          questionsCount={liveQuizQuestions.length}
+          teams={liveQuizTeams}
+        />
+      ) : null}
 
       {event.show_qr_on_live ? (
         <LiveQrOverlay

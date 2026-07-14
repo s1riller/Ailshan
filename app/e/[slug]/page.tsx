@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
 import { GuestUploadForm } from "@/components/guest-upload-form";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDate } from "@/lib/utils";
@@ -41,6 +43,15 @@ export default async function GuestEventPage({ params }: { params: Promise<{ slu
             <GuestUploadForm eventId={event.id} slug={event.custom_slug || event.slug} maxFileSizeMb={event.max_file_size_mb ?? 10} />
           </CardContent>
         </Card>
+        <div className="mt-4 rounded-lg border bg-card p-4">
+          <p className="text-sm font-medium">Командный квиз от ведущего</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Создайте команду или войдите по коду друзей. Ведущий объявит старт, а вопрос появится прямо на телефоне.
+          </p>
+          <Button asChild className="mt-3 w-full" variant="outline">
+            <Link href={`/e/${event.custom_slug || event.slug}/play`}>Присоединиться к квизу</Link>
+          </Button>
+        </div>
       </div>
     </main>
   );

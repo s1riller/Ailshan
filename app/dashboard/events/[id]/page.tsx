@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  Gamepad2,
   ImageIcon,
   MessageCircle,
   Monitor,
@@ -22,6 +23,7 @@ import {
 import { CopyButton } from "@/components/copy-button";
 import { EventQrCode } from "@/components/event-qr-code";
 import { EventSettingsForm } from "@/components/event-settings-form";
+import { QuizAdminPanel } from "@/components/quiz-admin-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +49,7 @@ type EventTab =
   | "overview"
   | "uploads"
   | "live"
+  | "games"
   | "guests"
   | "qr"
   | "branding"
@@ -58,6 +61,7 @@ const tabs: Array<[EventTab, string, ComponentType<{ className?: string }>, stri
   ["overview", "Обзор", BarChart3, "Сводка"],
   ["uploads", "Загрузки", ImageIcon, "Фото"],
   ["live", "Live", Monitor, "Экран"],
+  ["games", "Игры", Gamepad2, "Интерактив"],
   ["guests", "Гости", Users, "Имена"],
   ["qr", "QR", QrCode, "Коды"],
   ["branding", "Брендинг", Palette, "Стиль"],
@@ -97,7 +101,7 @@ export default async function EventAdminPage({
   const { data: event, error: eventError } = await supabase
     .from("events")
     .select(
-      "id, title, slug, date, location, is_active, guest_intro, thanks_text, live_layout, live_transition, slide_duration_seconds, show_messages_on_live, show_names_on_live, show_qr_on_live, auto_approve, max_file_size_mb, custom_slug, brand_name, brand_color, cover_title, archive_enabled, guest_instruction, photo_limit",
+      "id, title, slug, date, location, is_active, guest_intro, thanks_text, live_layout, live_transition, slide_duration_seconds, live_qr_effect, live_qr_interval_seconds, show_messages_on_live, show_names_on_live, show_qr_on_live, auto_approve, max_file_size_mb, custom_slug, brand_name, brand_color, cover_title, archive_enabled, guest_instruction, photo_limit",
     )
     .eq("id", id)
     .eq("owner_id", user.id)
@@ -147,6 +151,7 @@ export default async function EventAdminPage({
 
   const publicSlug = event.custom_slug || event.slug;
   const publicUrl = `${getSiteUrl()}/e/${publicSlug}`;
+  const playUrl = `${getSiteUrl()}/e/${publicSlug}/play`;
   const liveUrl = `${getSiteUrl()}/live/${publicSlug}`;
   const uploadStats = {
     total: uploadItems.length,
@@ -167,6 +172,88 @@ export default async function EventAdminPage({
   ).map(([, value]) => value);
   const inviteText = `Привет! Загрузи фото с мероприятия «${event.title}» по ссылке:\n${publicUrl}\nФото появятся на live-экране после модерации.`;
   const pro = isPro(profile.plan);
+  const { data: gameEntriesData = [] } = await admin
+    .from("game_entries")
+    .select("id, game_type, guest_name, content, metadata, score, status, created_at")
+    .eq("event_id", event.id)
+    .order("created_at", { ascending: false })
+    .limit(80);
+  const gameEntries = gameEntriesData ?? [];
+  const { data: photoVotesData = [] } = await admin
+    .from("photo_votes")
+    .select("id, upload_id, guest_name, created_at")
+    .eq("event_id", event.id)
+    .order("created_at", { ascending: false })
+    .limit(80);
+  const photoVotes = photoVotesData ?? [];
+  const gameLabels: Record<string, string> = {
+    photo_challenge: "Фото-челлендж",
+    bingo: "Бинго",
+    question: "Вопрос дня",
+    guess_guest: "Угадай гостя",
+    wheel_task: "Колесо заданий",
+    team_battle: "Битва команд",
+    poll: "Опрос",
+    secret_mission: "Тайная миссия",
+    time_capsule: "Капсула пожеланий",
+    millionaire: "Миллионер",
+  };
+  const gameStats = Object.entries(gameLabels).map(([type, label]) => ({
+    type,
+    label,
+    count: gameEntries.filter((entry) => entry.game_type === type).length,
+  }));
+  const teamScores = Array.from(
+    gameEntries
+      .filter((entry) => entry.game_type === "team_battle")
+      .reduce((map, entry) => {
+        const metadata = (entry.metadata ?? {}) as Record<string, string>;
+        const team = metadata.team || "Без команды";
+        map.set(team, (map.get(team) ?? 0) + (entry.score ?? 0));
+        return map;
+      }, new Map<string, number>()),
+  )
+    .map(([team, score]) => ({ team, score }))
+    .sort((a, b) => b.score - a.score);
+
+  const { data: quizData } = await admin
+    .from("event_quizzes")
+    .select("id, title, status, starts_at, current_question_index")
+    .eq("event_id", event.id)
+    .maybeSingle();
+  if (quizData?.status === "countdown") {
+    const { data: activated } = await admin.rpc("activate_due_quiz", { p_quiz_id: quizData.id });
+    if (activated) quizData.status = "active";
+  }
+  const { data: quizQuestionData = [] } = quizData
+    ? await admin
+        .from("quiz_questions")
+        .select("id, question_text, answers, correct_answer_index, points, position")
+        .eq("quiz_id", quizData.id)
+        .order("position")
+    : { data: [] };
+  const { data: quizTeamData = [] } = quizData
+    ? await admin.from("quiz_teams").select("id, name, join_code").eq("quiz_id", quizData.id)
+    : { data: [] };
+  const quizTeamIds = (quizTeamData ?? []).map((team) => team.id);
+  const quizQuestionIds = (quizQuestionData ?? []).map((question) => question.id);
+  const { data: quizMemberData = [] } = quizTeamIds.length
+    ? await admin.from("quiz_team_members").select("id, team_id").in("team_id", quizTeamIds)
+    : { data: [] };
+  const { data: quizAnswerData = [] } = quizQuestionIds.length
+    ? await admin.from("quiz_answers").select("team_id, points").in("question_id", quizQuestionIds)
+    : { data: [] };
+  const quizTeams = (quizTeamData ?? []).map((team) => ({
+    ...team,
+    members: (quizMemberData ?? []).filter((member) => member.team_id === team.id).length,
+    score: (quizAnswerData ?? [])
+      .filter((answer) => answer.team_id === team.id)
+      .reduce((sum, answer) => sum + answer.points, 0),
+  }));
+  const quizQuestions = (quizQuestionData ?? []).map((question) => ({
+    ...question,
+    answers: question.answers as string[],
+  }));
 
   return (
     <div className="space-y-6">
@@ -187,6 +274,12 @@ export default async function EventAdminPage({
             <Link href={publicUrl} target="_blank">
               <QrCode className="h-4 w-4" />
               Гостевая
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={playUrl} target="_blank">
+              <Gamepad2 className="h-4 w-4" />
+              Игры
             </Link>
           </Button>
           <Button asChild>
@@ -430,6 +523,134 @@ export default async function EventAdminPage({
                   Открыть fullscreen
                 </Link>
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "games" ? (
+        <QuizAdminPanel
+          eventId={event.id}
+          playUrl={playUrl}
+          liveUrl={liveUrl}
+          quiz={quizData as Parameters<typeof QuizAdminPanel>[0]["quiz"]}
+          questions={quizQuestions}
+          teams={quizTeams}
+        />
+      ) : null}
+
+      {false && activeTab === "games" ? (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Игровая ссылка</CardTitle>
+                <CardDescription>Отправьте гостям или покажите рядом с QR.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <code className="block break-all rounded-md border bg-background p-3 text-xs">{playUrl}</code>
+                <CopyButton value={playUrl} label="Скопировать ссылку игр" />
+                <Button asChild variant="outline" className="w-full">
+                  <Link href={playUrl} target="_blank">
+                    <ExternalLink className="h-4 w-4" />
+                    Открыть игры
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Активность</CardTitle>
+                <CardDescription>Все интерактивы события.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Ответы и задания</span>
+                  <strong>{gameEntries.length}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Голоса за фото</span>
+                  <strong>{photoVotes.length}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Команд</span>
+                  <strong>{teamScores.length}</strong>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Топ команд</CardTitle>
+                <CardDescription>Баллы из битвы столов / команд.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {teamScores.slice(0, 5).map((team) => (
+                  <div key={team.team} className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
+                    <span className="font-medium">{team.team}</span>
+                    <Badge>{team.score}</Badge>
+                  </div>
+                ))}
+                {teamScores.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Командных баллов пока нет.</p>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Мини-игры</CardTitle>
+              <CardDescription>Все игры уже доступны гостям на странице интерактива.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {gameStats.map((item) => (
+                <div key={item.type} className="rounded-lg border bg-background p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-medium">{item.label}</div>
+                    <Badge variant={item.count > 0 ? "default" : "secondary"}>{item.count}</Badge>
+                  </div>
+                </div>
+              ))}
+              <div className="rounded-lg border bg-background p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium">Голосование за фото</div>
+                  <Badge variant={photoVotes.length > 0 ? "default" : "secondary"}>{photoVotes.length}</Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Последние ответы гостей</CardTitle>
+              <CardDescription>Свежие действия из всех игр.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Игра</TableHead>
+                    <TableHead>Гость</TableHead>
+                    <TableHead>Ответ</TableHead>
+                    <TableHead>Баллы</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {gameEntries.slice(0, 20).map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell>{gameLabels[entry.game_type] ?? entry.game_type}</TableCell>
+                      <TableCell className="font-medium">{entry.guest_name}</TableCell>
+                      <TableCell className="max-w-[420px] text-muted-foreground">{entry.content}</TableCell>
+                      <TableCell>{entry.score}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {gameEntries.length === 0 ? (
+                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  Ответов пока нет. Откройте ссылку игр и отправьте первый тестовый ответ.
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>
