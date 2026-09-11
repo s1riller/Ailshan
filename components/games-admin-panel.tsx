@@ -26,8 +26,8 @@ import {
   saveGameConfigAction,
   toggleGameAction,
 } from "@/lib/actions/games";
-import { gameLabel } from "@/lib/games/catalog";
-import type { ContestTeam, ResolvedGame } from "@/lib/games/contest";
+import { gameLabel, getGameDefinition } from "@/lib/games/catalog";
+import type { ContestGameConfig, ContestTeam } from "@/lib/games/contest";
 
 export type PendingEntry = {
   id: string;
@@ -43,13 +43,17 @@ export type PendingEntry = {
 type GamesAdminPanelProps = {
   eventId: string;
   teams: ContestTeam[];
-  games: ResolvedGame[];
+  /**
+   * Только данные игры. Описание из каталога (в нём лежит компонент иконки)
+   * клиент достаёт сам: функции через границу сервер-клиент не сериализуются.
+   */
+  games: ContestGameConfig[];
   pendingEntries: PendingEntry[];
   hasQuiz: boolean;
 };
 
 export function GamesAdminPanel({ eventId, teams, games, pendingEntries, hasQuiz }: GamesAdminPanelProps) {
-  const enabledCount = games.filter((game) => game.config.isEnabled).length;
+  const enabledCount = games.filter((game) => game.isEnabled).length;
   const totalPoints = teams.reduce((sum, team) => sum + team.total, 0);
 
   return (
@@ -151,7 +155,7 @@ export function GamesAdminPanel({ eventId, teams, games, pendingEntries, hasQuiz
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
           {games.map((game) => (
-            <GameConfigCard key={game.definition.type} eventId={eventId} game={game} />
+            <GameConfigCard key={game.gameType} eventId={eventId} config={game} />
           ))}
         </CardContent>
       </Card>
@@ -276,9 +280,13 @@ function AwardPointsDialog({ eventId, team }: { eventId: string; team: ContestTe
   );
 }
 
-function GameConfigCard({ eventId, game }: { eventId: string; game: ResolvedGame }) {
-  const { definition, config } = game;
+function GameConfigCard({ eventId, config }: { eventId: string; config: ContestGameConfig }) {
+  const definition = getGameDefinition(config.gameType);
   const [open, setOpen] = useState(false);
+
+  // Игра, которой нет в каталоге, показывать нечем — например, после отката кода
+  if (!definition) return null;
+
   const Icon = definition.icon;
   const needsMoreOptions = definition.needsOptions && config.options.length < 2;
 

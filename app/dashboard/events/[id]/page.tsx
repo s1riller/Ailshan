@@ -617,7 +617,7 @@ export default async function EventAdminPage({
           <GamesAdminPanel
             eventId={event.id}
             teams={contest.teams}
-            games={contest.games}
+            games={contest.games.map((game) => game.config)}
             pendingEntries={pendingEntries}
             hasQuiz={Boolean(contest.quizId)}
           />
