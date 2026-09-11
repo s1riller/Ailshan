@@ -59,7 +59,7 @@ export default async function EventPlayPage({
   if (eventError && eventError.code !== "PGRST116") {
     throw new Error(
       `Не удалось загрузить мероприятие «${slug}»: ${eventError.message}. ` +
-        "Если речь о недостающей таблице или колонке — выполните миграции из папки supabase в Supabase SQL Editor.",
+        "Если речь о недостающей таблице или колонке — примените миграции из supabase/migrations (npm run db:reset локально).",
     );
   }
   if (!event) notFound();

@@ -25,17 +25,10 @@ import { EventQrCode } from "@/components/event-qr-code";
 import { EventSettingsForm } from "@/components/event-settings-form";
 import { GamesAdminPanel, type PendingEntry } from "@/components/games-admin-panel";
 import { QuizAdminPanel } from "@/components/quiz-admin-panel";
+import { UploadPreview } from "@/components/upload-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bulkModerateUploadsAction, moderateUploadAction } from "@/lib/actions/uploads";
 import { requireActiveProfile } from "@/lib/authz";
@@ -76,38 +69,6 @@ function statusBadge(status: UploadStatus) {
   if (status === "approved") return <Badge>Одобрено</Badge>;
   if (status === "rejected") return <Badge variant="destructive">Отклонено</Badge>;
   return <Badge variant="secondary">pending</Badge>;
-}
-
-/** Превью фото с открытием на весь экран — используется и в карточках, и в таблице */
-function UploadPreview({
-  signedUrl,
-  guestName,
-  message,
-  className = "h-16 w-16",
-}: {
-  signedUrl: string;
-  guestName: string;
-  message: string | null;
-  className?: string;
-}) {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button type="button" className={`relative shrink-0 overflow-hidden rounded-md border bg-muted ${className}`}>
-          {signedUrl ? <Image src={signedUrl} alt="" fill className="object-cover" sizes="96px" /> : null}
-        </button>
-      </DialogTrigger>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{guestName}</DialogTitle>
-          <DialogDescription>{message || "Без пожелания"}</DialogDescription>
-        </DialogHeader>
-        <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-muted">
-          {signedUrl ? <Image src={signedUrl} alt="" fill className="object-contain" sizes="90vw" /> : null}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 /** Кнопки модерации: во всю ширину на телефоне, компактные в таблице */
@@ -191,7 +152,7 @@ export default async function EventAdminPage({
   if (eventError) {
     if (eventError.code === "PGRST116") notFound();
     throw new Error(
-      `Не удалось загрузить мероприятие: ${eventError.message}. Выполните supabase/event-control-center.sql и предыдущие миграции.`,
+      `Не удалось загрузить мероприятие: ${eventError.message}. Примените миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push).`,
     );
   }
   if (!event) notFound();

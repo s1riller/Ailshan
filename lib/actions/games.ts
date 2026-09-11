@@ -18,7 +18,7 @@ import {
 } from "@/lib/validations/games";
 
 const MIGRATION_HINT =
-  "Выполните supabase/minigames-contest.sql в Supabase SQL Editor — база ещё не готова к конкурсу.";
+  "База ещё не готова к конкурсу: примените миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push).";
 
 function describeDbError(message: string) {
   if (
@@ -91,7 +91,9 @@ export async function submitGameEntryAction(formData: FormData) {
     eventId: formData.get("eventId"),
     slug: formData.get("slug"),
     gameType: formData.get("gameType"),
-    content: formData.get("content"),
+    // У игр с вариантами поля content в форме нет: formData.get даёт null,
+    // а .default("") в Zod срабатывает только на undefined
+    content: formData.get("content") ?? "",
     optionIndex: formData.get("optionIndex") ?? null,
     metadata: formMetadata(formData),
   });
@@ -103,6 +105,8 @@ export async function submitGameEntryAction(formData: FormData) {
   const { eventId, slug, gameType, content, optionIndex, metadata } = parsed.data;
   const definition = getGameDefinition(gameType);
   if (!definition) redirectGuestError(slug, "Неизвестная игра");
+  // Баллы «Битвы команд» начисляет только ведущий — иначе их можно самоначислить подделанным запросом
+  if (definition.input === "host") redirectGuestError(slug, "Баллы за эту игру начисляет ведущий");
 
   const { teamId, memberId } = await readTeamSession(eventId);
   if (!teamId || !memberId) {
@@ -121,30 +125,40 @@ export async function submitGameEntryAction(formData: FormData) {
   if (!config?.is_enabled) redirectGuestError(slug, "Ведущий ещё не открыл эту игру");
 
   // Одна попытка на команду — иначе баллы можно было бы накручивать повторами
-  const { data: teamEntries } = await admin
+  const { data: teamEntries, error: entriesError } = await admin
     .from("game_entries")
     .select("id, metadata")
     .eq("event_id", eventId)
     .eq("team_id", teamId)
     .eq("game_type", gameType);
+  if (entriesError) redirectGuestError(slug, describeDbError(entriesError.message));
   const existing = teamEntries ?? [];
 
   if (!definition.allowsMultipleEntries && existing.length > 0) {
     redirectGuestError(slug, "Команда уже участвовала в этой игре");
   }
 
+  // Варианты хранятся в jsonb, поэтому приводим к массиву строк явно
+  const options = Array.isArray(config.options)
+    ? config.options.filter((item): item is string => typeof item === "string")
+    : [];
+
   if (definition.input === "bingo") {
     const cell = String(metadata.cell ?? "");
+    // Клетка не из карточки — подделанный запрос, иначе баллы копятся без предела
+    if (!options.includes(cell)) redirectGuestError(slug, "Такой клетки нет в карточке");
     const alreadyMarked = existing.some(
       (row) => String((row.metadata as Record<string, unknown> | null)?.cell ?? "") === cell,
     );
     if (alreadyMarked) redirectGuestError(slug, "Эта клетка уже отмечена вашей командой");
   }
 
-  // Варианты хранятся в jsonb, поэтому приводим к массиву строк явно
-  const options = Array.isArray(config.options)
-    ? config.options.filter((item): item is string => typeof item === "string")
-    : [];
+  if (definition.input === "photo") {
+    const filePath = String(metadata.filePath ?? "");
+    if (!filePath.startsWith(`events/${eventId}/games/`)) {
+      redirectGuestError(slug, "Сначала загрузите фото");
+    }
+  }
 
   let answerText = content;
   if (definition.input === "choice") {
@@ -178,6 +192,7 @@ export async function submitGameEntryAction(formData: FormData) {
     member_id: memberId,
   });
 
+  if (error?.code === "23505") redirectGuestError(slug, "Команда уже участвовала в этой игре");
   if (error) redirectGuestError(slug, describeDbError(error.message));
 
   revalidatePath(`/e/${slug}/play`);
@@ -367,12 +382,15 @@ export async function awardTeamPointsAction(formData: FormData) {
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Проверьте баллы");
 
   const { admin, slug } = await requireOwnedEvent(parsed.data.eventId);
-  const { data: team } = await admin
-    .from("quiz_teams")
-    .select("id, name")
-    .eq("id", parsed.data.teamId)
+  const { data: quiz } = await admin
+    .from("event_quizzes")
+    .select("id")
+    .eq("event_id", parsed.data.eventId)
     .maybeSingle();
-  if (!team) throw new Error("Команда не найдена");
+  const { data: team } = quiz
+    ? await admin.from("quiz_teams").select("id, name").eq("id", parsed.data.teamId).eq("quiz_id", quiz.id).maybeSingle()
+    : { data: null };
+  if (!team) throw new Error("Команда не найдена в этом мероприятии");
 
   const { error } = await admin.from("game_entries").insert({
     event_id: parsed.data.eventId,

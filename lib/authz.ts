@@ -29,7 +29,7 @@ export async function ensureProfile() {
 
   if (profileError) {
     throw new Error(
-      `Не удалось загрузить профиль пользователя: ${profileError.message}. Выполните supabase/super-admin.sql и supabase/personal-account.sql в Supabase SQL Editor.`,
+      `Не удалось загрузить профиль пользователя: ${profileError.message}. Примените миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push).`,
     );
   }
 
