@@ -6,6 +6,7 @@ import { EventQrCode } from "@/components/event-qr-code";
 import { LiveAutoRefresh } from "@/components/live-auto-refresh";
 import { QuizLiveOverlay } from "@/components/quiz-live-overlay";
 import { getSiteUrl } from "@/lib/env";
+import { loadContest, type ContestTeam } from "@/lib/games/contest";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const revalidate = 5;
@@ -464,20 +465,10 @@ function LiveQrOverlay({
   );
 }
 
-function LiveGameHighlights({ entries }: { entries: LiveGameEntry[] }) {
-  if (entries.length === 0) return null;
+function LiveGameHighlights({ teams, entries }: { teams: ContestTeam[]; entries: LiveGameEntry[] }) {
+  if (teams.length === 0 && entries.length === 0) return null;
 
-  const teamScores = Array.from(
-    entries
-      .filter((entry) => entry.game_type === "team_battle")
-      .reduce((map, entry) => {
-        const team = entry.metadata?.team || "Команда";
-        map.set(team, (map.get(team) ?? 0) + (entry.score ?? 0));
-        return map;
-      }, new Map<string, number>()),
-  )
-    .map(([team, score]) => ({ team, score }))
-    .sort((a, b) => b.score - a.score);
+  const topTeams = teams.slice(0, 3);
 
   const pollResults = Array.from(
     entries
@@ -497,21 +488,26 @@ function LiveGameHighlights({ entries }: { entries: LiveGameEntry[] }) {
       <div className="rounded-2xl border border-white/10 bg-black/45 p-4 shadow-2xl backdrop-blur-xl">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <Gamepad2 className="h-4 w-4 text-white/70" />
-          Интерактив гостей
+          Конкурс команд
         </div>
 
-        {teamScores[0] ? (
-          <div className="mb-3 rounded-xl border border-white/10 bg-white/10 p-3">
+        {topTeams.length > 0 ? (
+          <div className="mb-3 space-y-2 rounded-xl border border-white/10 bg-white/10 p-3">
             <div className="flex items-center gap-2 text-xs uppercase text-white/55">
               <Trophy className="h-3.5 w-3.5" />
-              Лидер команд
+              Таблица команд
             </div>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <span className="truncate font-semibold">{teamScores[0].team}</span>
-              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-black">
-                {teamScores[0].score}
-              </span>
-            </div>
+            {topTeams.map((team, index) => (
+              <div key={team.id} className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate">
+                  <span className="mr-2 text-white/50">{index + 1}</span>
+                  <span className="font-semibold">{team.name}</span>
+                </span>
+                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-black">
+                  {team.total}
+                </span>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -609,6 +605,7 @@ export default async function LivePage({
     .order("created_at", { ascending: false })
     .limit(20);
   const gameEntries = (gameEntriesData ?? []) as LiveGameEntry[];
+  const contest = await loadContest(event.id);
 
   const { data: quiz } = await supabase
     .from("event_quizzes")
@@ -884,7 +881,7 @@ export default async function LivePage({
         qrInterval={qrInterval}
       />
 
-      {false ? <LiveGameHighlights entries={gameEntries} /> : null}
+      <LiveGameHighlights teams={contest.teams} entries={gameEntries} />
 
       {quiz && liveQuizStatus ? (
         <QuizLiveOverlay

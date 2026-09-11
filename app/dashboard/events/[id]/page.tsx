@@ -23,6 +23,7 @@ import {
 import { CopyButton } from "@/components/copy-button";
 import { EventQrCode } from "@/components/event-qr-code";
 import { EventSettingsForm } from "@/components/event-settings-form";
+import { GamesAdminPanel, type PendingEntry } from "@/components/games-admin-panel";
 import { QuizAdminPanel } from "@/components/quiz-admin-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { bulkModerateUploadsAction, moderateUploadAction } from "@/lib/actions/uploads";
 import { requireActiveProfile } from "@/lib/authz";
 import { getSiteUrl } from "@/lib/env";
+import { loadContest } from "@/lib/games/contest";
 import { isPro } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -251,49 +253,31 @@ export default async function EventAdminPage({
   ).map(([, value]) => value);
   const inviteText = `Привет! Загрузи фото с мероприятия «${event.title}» по ссылке:\n${publicUrl}\nФото появятся на live-экране после модерации.`;
   const pro = isPro(profile.plan);
-  const { data: gameEntriesData = [] } = await admin
-    .from("game_entries")
-    .select("id, game_type, guest_name, content, metadata, score, status, created_at")
-    .eq("event_id", event.id)
-    .order("created_at", { ascending: false })
-    .limit(80);
-  const gameEntries = gameEntriesData ?? [];
-  const { data: photoVotesData = [] } = await admin
-    .from("photo_votes")
-    .select("id, upload_id, guest_name, created_at")
-    .eq("event_id", event.id)
-    .order("created_at", { ascending: false })
-    .limit(80);
-  const photoVotes = photoVotesData ?? [];
-  const gameLabels: Record<string, string> = {
-    photo_challenge: "Фото-челлендж",
-    bingo: "Бинго",
-    question: "Вопрос дня",
-    guess_guest: "Угадай гостя",
-    wheel_task: "Колесо заданий",
-    team_battle: "Битва команд",
-    poll: "Опрос",
-    secret_mission: "Тайная миссия",
-    time_capsule: "Капсула пожеланий",
-    millionaire: "Миллионер",
-  };
-  const gameStats = Object.entries(gameLabels).map(([type, label]) => ({
-    type,
-    label,
-    count: gameEntries.filter((entry) => entry.game_type === type).length,
-  }));
-  const teamScores = Array.from(
-    gameEntries
-      .filter((entry) => entry.game_type === "team_battle")
-      .reduce((map, entry) => {
-        const metadata = (entry.metadata ?? {}) as Record<string, string>;
-        const team = metadata.team || "Без команды";
-        map.set(team, (map.get(team) ?? 0) + (entry.score ?? 0));
-        return map;
-      }, new Map<string, number>()),
-  )
-    .map(([team, score]) => ({ team, score }))
-    .sort((a, b) => b.score - a.score);
+  // Конкурс: баллы команд, настройки мини-игр и очередь на подтверждение
+  const contest = await loadContest(event.id);
+  const teamNameById = new Map(contest.teams.map((team) => [team.id, team.name]));
+  const pendingEntries: PendingEntry[] = await Promise.all(
+    contest.entries
+      .filter((entry) => entry.status === "pending")
+      .slice(0, 30)
+      .map(async (entry) => {
+        const filePath = typeof entry.metadata.filePath === "string" ? entry.metadata.filePath : null;
+        const signed = filePath
+          ? await admin.storage.from("event-photos").createSignedUrl(filePath, 60 * 20)
+          : null;
+
+        return {
+          id: entry.id,
+          gameType: entry.gameType,
+          guestName: entry.guestName,
+          teamName: (entry.teamId ? teamNameById.get(entry.teamId) : null) ?? "Без команды",
+          content: entry.content,
+          score: entry.score,
+          createdAt: entry.createdAt,
+          photoUrl: signed?.data?.signedUrl ?? null,
+        };
+      }),
+  );
 
   const { data: quizData } = await admin
     .from("event_quizzes")
@@ -621,130 +605,22 @@ export default async function EventAdminPage({
       ) : null}
 
       {activeTab === "games" ? (
-        <QuizAdminPanel
-          eventId={event.id}
-          playUrl={playUrl}
-          liveUrl={liveUrl}
-          quiz={quizData as Parameters<typeof QuizAdminPanel>[0]["quiz"]}
-          questions={quizQuestions}
-          teams={quizTeams}
-        />
-      ) : null}
-
-      {false && activeTab === "games" ? (
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle>Игровая ссылка</CardTitle>
-                <CardDescription>Отправьте гостям или покажите рядом с QR.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <code className="block break-all rounded-md border bg-background p-3 text-xs">{playUrl}</code>
-                <CopyButton value={playUrl} label="Скопировать ссылку игр" />
-                <Button asChild variant="outline" className="w-full">
-                  <Link href={playUrl} target="_blank">
-                    <ExternalLink className="h-4 w-4" />
-                    Открыть игры
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Активность</CardTitle>
-                <CardDescription>Все интерактивы события.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span>Ответы и задания</span>
-                  <strong>{gameEntries.length}</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>Голоса за фото</span>
-                  <strong>{photoVotes.length}</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>Команд</span>
-                  <strong>{teamScores.length}</strong>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Топ команд</CardTitle>
-                <CardDescription>Баллы из битвы столов / команд.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {teamScores.slice(0, 5).map((team) => (
-                  <div key={team.team} className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
-                    <span className="font-medium">{team.team}</span>
-                    <Badge>{team.score}</Badge>
-                  </div>
-                ))}
-                {teamScores.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Командных баллов пока нет.</p>
-                ) : null}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Мини-игры</CardTitle>
-              <CardDescription>Все игры уже доступны гостям на странице интерактива.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {gameStats.map((item) => (
-                <div key={item.type} className="rounded-lg border bg-background p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium">{item.label}</div>
-                    <Badge variant={item.count > 0 ? "default" : "secondary"}>{item.count}</Badge>
-                  </div>
-                </div>
-              ))}
-              <div className="rounded-lg border bg-background p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium">Голосование за фото</div>
-                  <Badge variant={photoVotes.length > 0 ? "default" : "secondary"}>{photoVotes.length}</Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Последние ответы гостей</CardTitle>
-              <CardDescription>Свежие действия из всех игр.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Игра</TableHead>
-                    <TableHead>Гость</TableHead>
-                    <TableHead>Ответ</TableHead>
-                    <TableHead>Баллы</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {gameEntries.slice(0, 20).map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell>{gameLabels[entry.game_type] ?? entry.game_type}</TableCell>
-                      <TableCell className="font-medium">{entry.guest_name}</TableCell>
-                      <TableCell className="max-w-[420px] text-muted-foreground">{entry.content}</TableCell>
-                      <TableCell>{entry.score}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {gameEntries.length === 0 ? (
-                <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  Ответов пока нет. Откройте ссылку игр и отправьте первый тестовый ответ.
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+          <QuizAdminPanel
+            eventId={event.id}
+            playUrl={playUrl}
+            liveUrl={liveUrl}
+            quiz={quizData as Parameters<typeof QuizAdminPanel>[0]["quiz"]}
+            questions={quizQuestions}
+            teams={quizTeams}
+          />
+          <GamesAdminPanel
+            eventId={event.id}
+            teams={contest.teams}
+            games={contest.games}
+            pendingEntries={pendingEntries}
+            hasQuiz={Boolean(contest.quizId)}
+          />
         </div>
       ) : null}
 
