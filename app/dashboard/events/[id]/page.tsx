@@ -76,6 +76,85 @@ function statusBadge(status: UploadStatus) {
   return <Badge variant="secondary">pending</Badge>;
 }
 
+/** Превью фото с открытием на весь экран — используется и в карточках, и в таблице */
+function UploadPreview({
+  signedUrl,
+  guestName,
+  message,
+  className = "h-16 w-16",
+}: {
+  signedUrl: string;
+  guestName: string;
+  message: string | null;
+  className?: string;
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className={`relative shrink-0 overflow-hidden rounded-md border bg-muted ${className}`}>
+          {signedUrl ? <Image src={signedUrl} alt="" fill className="object-cover" sizes="96px" /> : null}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{guestName}</DialogTitle>
+          <DialogDescription>{message || "Без пожелания"}</DialogDescription>
+        </DialogHeader>
+        <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-muted">
+          {signedUrl ? <Image src={signedUrl} alt="" fill className="object-contain" sizes="90vw" /> : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Кнопки модерации: во всю ширину на телефоне, компактные в таблице */
+function ModerationActions({
+  uploadId,
+  eventId,
+  status,
+  fullWidth = false,
+}: {
+  uploadId: string;
+  eventId: string;
+  status: UploadStatus;
+  fullWidth?: boolean;
+}) {
+  return (
+    <>
+      <form action={moderateUploadAction} className={fullWidth ? "w-full" : undefined}>
+        <input type="hidden" name="uploadId" value={uploadId} />
+        <input type="hidden" name="eventId" value={eventId} />
+        <input type="hidden" name="status" value="approved" />
+        <Button
+          size={fullWidth ? "default" : "sm"}
+          type="submit"
+          className={fullWidth ? "w-full" : undefined}
+          disabled={status === "approved"}
+        >
+          <Check className="h-4 w-4" />
+          Одобрить
+        </Button>
+      </form>
+      <form action={moderateUploadAction} className={fullWidth ? "w-full" : undefined}>
+        <input type="hidden" name="uploadId" value={uploadId} />
+        <input type="hidden" name="eventId" value={eventId} />
+        <input type="hidden" name="status" value="rejected" />
+        <Button
+          size={fullWidth ? "default" : "sm"}
+          type="submit"
+          variant="outline"
+          className={fullWidth ? "w-full" : undefined}
+          disabled={status === "rejected"}
+        >
+          <X className="h-4 w-4" />
+          Отклонить
+        </Button>
+      </form>
+    </>
+  );
+}
+
 function getActiveTab(value?: string): EventTab {
   return tabs.some(([tab]) => tab === value) ? (value as EventTab) : "overview";
 }
@@ -269,20 +348,20 @@ export default async function EventAdminPage({
             {formatDate(event.date)} · {event.location || "Локация не указана"}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
+        <div className="grid grid-cols-3 gap-2 lg:flex lg:flex-wrap">
+          <Button asChild variant="outline" className="w-full px-2 lg:w-auto lg:px-4">
             <Link href={publicUrl} target="_blank">
               <QrCode className="h-4 w-4" />
               Гостевая
             </Link>
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="w-full px-2 lg:w-auto lg:px-4">
             <Link href={playUrl} target="_blank">
               <Gamepad2 className="h-4 w-4" />
               Игры
             </Link>
           </Button>
-          <Button asChild>
+          <Button asChild className="w-full px-2 lg:w-auto lg:px-4">
             <Link href={liveUrl} target="_blank">
               <Monitor className="h-4 w-4" />
               Live
@@ -291,23 +370,26 @@ export default async function EventAdminPage({
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-9">
-        {tabs.map(([tab, label, Icon, hint]) => (
-          <Link
-            key={tab}
-            href={`/dashboard/events/${event.id}?tab=${tab}`}
-            className={`rounded-lg border bg-card p-3 transition-colors hover:bg-secondary/70 ${activeTab === tab ? "border-primary" : ""}`}
-          >
-            <Icon className="mb-2 h-4 w-4 text-primary" />
-            <div className="text-sm font-medium">{label}</div>
-            <div className="text-xs text-muted-foreground">{hint}</div>
-          </Link>
-        ))}
+      {/* На телефоне вкладки прокручиваются лентой, на десктопе раскладываются сеткой */}
+      <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
+        <div className="flex w-max gap-2 sm:grid sm:w-full sm:grid-cols-3 md:grid-cols-5">
+          {tabs.map(([tab, label, Icon, hint]) => (
+            <Link
+              key={tab}
+              href={`/dashboard/events/${event.id}?tab=${tab}`}
+              className={`w-28 shrink-0 rounded-lg border bg-card p-3 transition-colors hover:bg-secondary/70 sm:w-auto ${activeTab === tab ? "border-primary bg-secondary/50" : ""}`}
+            >
+              <Icon className="mb-2 h-4 w-4 text-primary" />
+              <div className="text-sm font-medium">{label}</div>
+              <div className="text-xs text-muted-foreground">{hint}</div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {activeTab === "overview" ? (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {[
               ["Всего фото", uploadStats.total],
               ["На модерации", uploadStats.pending],
@@ -315,11 +397,11 @@ export default async function EventAdminPage({
               ["Отклонено", uploadStats.rejected],
             ].map(([label, value]) => (
               <Card key={label}>
-                <CardHeader>
+                <CardHeader className="pb-2">
                   <CardTitle className="text-sm">{label}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-semibold">{value}</div>
+                  <div className="text-2xl font-semibold sm:text-3xl">{value}</div>
                 </CardContent>
               </Card>
             ))}
@@ -391,8 +473,8 @@ export default async function EventAdminPage({
             </div>
             <form className="flex gap-2">
               <input type="hidden" name="tab" value="uploads" />
-              <input className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" name="q" placeholder="Поиск по имени или пожеланию" defaultValue={query.q ?? ""} />
-              <Button type="submit" variant="outline">Найти</Button>
+              <input className="flex h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-base sm:h-10 sm:text-sm" name="q" placeholder="Поиск по имени" defaultValue={query.q ?? ""} />
+              <Button type="submit" variant="outline" className="shrink-0">Найти</Button>
             </form>
             {signedUploads.length === 0 ? (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">Загрузок пока нет.</div>
@@ -401,77 +483,87 @@ export default async function EventAdminPage({
               <form id="bulk-moderation" action={bulkModerateUploadsAction} />
               <div className="space-y-3">
                 <input form="bulk-moderation" type="hidden" name="eventId" value={event.id} />
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead></TableHead>
-                      <TableHead>Фото</TableHead>
-                      <TableHead>Гость</TableHead>
-                      <TableHead>Пожелание</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead className="text-right">Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {signedUploads.map((upload) => (
-                      <TableRow key={upload.id}>
-                        <TableCell>
-                          <input form="bulk-moderation" type="checkbox" name="uploadIds" value={upload.id} />
-                        </TableCell>
-                        <TableCell>
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <button type="button" className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
-                                {upload.signedUrl ? <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="64px" /> : null}
-                              </button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl">
-                              <DialogHeader>
-                                <DialogTitle>{upload.guest_name}</DialogTitle>
-                                <DialogDescription>{upload.message || "Без пожелания"}</DialogDescription>
-                              </DialogHeader>
-                              <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-muted">
-                                {upload.signedUrl ? <Image src={upload.signedUrl} alt="" fill className="object-contain" sizes="80vw" /> : null}
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </TableCell>
-                        <TableCell className="font-medium">{upload.guest_name}</TableCell>
-                        <TableCell className="max-w-[280px] text-muted-foreground">{upload.message || "—"}</TableCell>
-                        <TableCell>{statusBadge(upload.status)}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-2">
-                            <form action={moderateUploadAction}>
-                              <input type="hidden" name="uploadId" value={upload.id} />
-                              <input type="hidden" name="eventId" value={event.id} />
-                              <input type="hidden" name="status" value="approved" />
-                              <Button size="sm" type="submit" disabled={upload.status === "approved"}>
-                                <Check className="h-4 w-4" />
-                                Одобрить
-                              </Button>
-                            </form>
-                            <form action={moderateUploadAction}>
-                              <input type="hidden" name="uploadId" value={upload.id} />
-                              <input type="hidden" name="eventId" value={event.id} />
-                              <input type="hidden" name="status" value="rejected" />
-                              <Button size="sm" type="submit" variant="outline" disabled={upload.status === "rejected"}>
-                                <X className="h-4 w-4" />
-                                Отклонить
-                              </Button>
-                            </form>
+                {/* Телефон: карточки — фото крупнее, кнопки модерации под палец */}
+                <div className="space-y-3 lg:hidden">
+                  {signedUploads.map((upload) => (
+                    <article key={upload.id} className="overflow-hidden rounded-lg border bg-card">
+                      <div className="flex gap-3 p-3">
+                        <UploadPreview
+                          signedUrl={upload.signedUrl}
+                          guestName={upload.guest_name}
+                          message={upload.message}
+                          className="h-20 w-20"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="truncate font-medium">{upload.guest_name}</p>
+                            {statusBadge(upload.status)}
                           </div>
-                        </TableCell>
+                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{upload.message || "—"}</p>
+                          <label className="mt-2 inline-flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
+                            <input
+                              form="bulk-moderation"
+                              type="checkbox"
+                              name="uploadIds"
+                              value={upload.id}
+                              className="h-5 w-5 rounded border-input"
+                            />
+                            Выбрать
+                          </label>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 border-t bg-background/60 p-3">
+                        <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} fullWidth />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="hidden lg:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead></TableHead>
+                        <TableHead>Фото</TableHead>
+                        <TableHead>Гость</TableHead>
+                        <TableHead>Пожелание</TableHead>
+                        <TableHead>Статус</TableHead>
+                        <TableHead className="text-right">Действия</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <div className="flex flex-wrap gap-2">
+                    </TableHeader>
+                    <TableBody>
+                      {signedUploads.map((upload) => (
+                        <TableRow key={upload.id}>
+                          <TableCell>
+                            <input form="bulk-moderation" type="checkbox" name="uploadIds" value={upload.id} className="h-4 w-4" />
+                          </TableCell>
+                          <TableCell>
+                            <UploadPreview
+                              signedUrl={upload.signedUrl}
+                              guestName={upload.guest_name}
+                              message={upload.message}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">{upload.guest_name}</TableCell>
+                          <TableCell className="max-w-[280px] text-muted-foreground">{upload.message || "—"}</TableCell>
+                          <TableCell>{statusBadge(upload.status)}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-2">
+                              <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="grid gap-2 sm:flex sm:flex-wrap">
                   <input form="bulk-moderation" type="hidden" name="eventId" value={event.id} />
-                  <Button form="bulk-moderation" type="submit" name="status" value="approved">
+                  <Button form="bulk-moderation" type="submit" name="status" value="approved" className="w-full sm:w-auto">
                     <ShieldCheck className="h-4 w-4" />
                     Одобрить выбранные
                   </Button>
-                  <Button form="bulk-moderation" type="submit" name="status" value="rejected" variant="outline">
+                  <Button form="bulk-moderation" type="submit" name="status" value="rejected" variant="outline" className="w-full sm:w-auto">
                     <X className="h-4 w-4" />
                     Отклонить выбранные
                   </Button>

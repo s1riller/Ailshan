@@ -120,3 +120,82 @@
     border-radius: 1rem;
   }
 }
+
+/* --- Мобильная адаптация -------------------------------------------------- */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+    /* clip, а не hidden: hidden сделал бы body скролл-контейнером и сломал
+       sticky-шапку и липкие кнопки сохранения */
+    overflow-x: clip;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Ссылки и кнопки не должны «залипать» в hover-состоянии на тач-экранах */
+  @media (hover: none) {
+    a:hover,
+    button:hover {
+      transition-duration: 0ms;
+    }
+  }
+}
+
+@layer utilities {
+  /* Горизонтальные ленты вкладок без видимого скроллбара */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Отступы под «челку» и домашний индикатор iPhone */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Высота экрана без прыжков адресной строки в мобильных браузерах */
+  .min-h-screen-dvh {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+}
+
+/*
+ * iOS Safari автоматически зумит страницу, если шрифт поля ввода меньше 16px.
+ * Селекторы с атрибутами дают специфичность выше, чем у класса .text-sm,
+ * поэтому правило работает и для полей с utility-классами Tailwind.
+ */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea:not([hidden]),
+  select:not([multiple]) {
+    font-size: 16px;
+  }
+
+  /* Таблицы на телефоне прокручиваются, а не сжимаются в нечитаемый текст */
+  table {
+    border-spacing: 0 0.35rem;
+  }
+}
+
+/* Плавная инерционная прокрутка горизонтальных блоков на iOS */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}

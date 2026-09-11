@@ -41,7 +41,7 @@ export default async function AccountPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="locale">Язык</Label>
-              <select id="locale" name="locale" defaultValue={profile.locale ?? "ru"} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <select id="locale" name="locale" defaultValue={profile.locale ?? "ru"} className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 py-2 text-sm">
                 <option value="ru">Русский</option>
                 <option value="en">English</option>
               </select>

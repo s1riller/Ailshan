@@ -238,8 +238,9 @@ export function GuestUploadForm({
           )}
         />
 
-        <div className="sticky bottom-0 -mx-6 bg-card px-6 pb-1 pt-2">
-          <Button disabled={loading} size="lg" className="h-12 w-full text-base" type="submit">
+        {/* Кнопка всегда под рукой: липнет к низу экрана с учётом домашнего индикатора iPhone */}
+        <div className="sticky bottom-0 -mx-4 border-t bg-card/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <Button disabled={loading} size="lg" className="h-14 w-full text-base" type="submit">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Отправить фото
           </Button>

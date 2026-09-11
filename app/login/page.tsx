@@ -15,7 +15,7 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+    <main className="flex min-h-screen-dvh items-center justify-center px-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Вход организатора</CardTitle>

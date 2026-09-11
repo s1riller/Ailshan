@@ -21,7 +21,7 @@ export default async function ThanksPage({ params }: { params: Promise<{ slug: s
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+    <main className="flex min-h-screen-dvh items-center justify-center px-4 py-10">
       <Card className="w-full max-w-md">
         <CardContent className="pt-6 text-center">
           <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />

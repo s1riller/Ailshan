@@ -70,22 +70,22 @@ export default async function DashboardPage() {
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         {stats.map(([label, value, Icon]) => (
           <Card key={label}>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm">{label}</CardTitle>
               <Icon className="h-4 w-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{value}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">{value}</div>
             </CardContent>
           </Card>
         ))}
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
           <CardTitle>Последние мероприятия</CardTitle>
           <Button asChild variant="outline" size="sm">
             <Link href="/dashboard/events">Все</Link>

@@ -137,35 +137,35 @@ export function QuizAdminPanel({
                 <input type="hidden" name="quizId" value={quiz.id} />
                 <div className="flex-1 space-y-2">
                   <Label htmlFor="countdownSeconds">Обратный отсчёт</Label>
-                  <select id="countdownSeconds" name="countdownSeconds" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <select id="countdownSeconds" name="countdownSeconds" className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 text-sm">
                     <option value="10">10 секунд</option>
                     <option value="30">30 секунд</option>
                     <option value="60">1 минута</option>
                     <option value="120">2 минуты</option>
                   </select>
                 </div>
-                <Button type="submit"><CirclePlay className="h-4 w-4" />Объявить старт</Button>
+                <Button type="submit" size="lg" className="w-full sm:w-auto"><CirclePlay className="h-4 w-4" />Объявить старт</Button>
               </form>
             ) : null}
 
             {effectiveStatus === "active" ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
                 <form action={nextQuizQuestionAction}>
                   <input type="hidden" name="eventId" value={eventId} />
                   <input type="hidden" name="quizId" value={quiz.id} />
-                  <Button type="submit">{quiz.current_question_index + 1 >= questions.length ? "Показать результаты" : "Следующий вопрос"}</Button>
+                  <Button type="submit" size="lg" className="w-full sm:w-auto">{quiz.current_question_index + 1 >= questions.length ? "Показать результаты" : "Следующий вопрос"}</Button>
                 </form>
                 <form action={finishQuizAction}>
                   <input type="hidden" name="eventId" value={eventId} />
                   <input type="hidden" name="quizId" value={quiz.id} />
-                  <Button type="submit" variant="outline"><Square className="h-4 w-4" />Завершить</Button>
+                  <Button type="submit" size="lg" variant="outline" className="w-full sm:w-auto"><Square className="h-4 w-4" />Завершить</Button>
                 </form>
               </div>
             ) : null}
 
             {quiz.status !== "draft" ? (
               <Dialog>
-                <DialogTrigger asChild><Button variant="outline"><RotateCcw className="h-4 w-4" />Перезапустить квиз</Button></DialogTrigger>
+                <DialogTrigger asChild><Button variant="outline" className="w-full sm:w-auto"><RotateCcw className="h-4 w-4" />Перезапустить квиз</Button></DialogTrigger>
                 <DialogContent>
                   <DialogHeader><DialogTitle>Перезапустить квиз?</DialogTitle><DialogDescription>Все ответы и баллы будут очищены. Вопросы, команды и участники сохранятся, а квиз вернётся в режим подготовки.</DialogDescription></DialogHeader>
                   <form action={resetQuizAction}>
@@ -208,7 +208,7 @@ export function QuizAdminPanel({
                   {[0, 1, 2, 3].map((index) => <Input key={index} name={`answer${index}`} placeholder={`${String.fromCharCode(65 + index)}. Вариант ответа`} required />)}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2"><Label>Правильный вариант</Label><select name="correctAnswerIndex" className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{[0, 1, 2, 3].map((index) => <option key={index} value={index}>{String.fromCharCode(65 + index)}</option>)}</select></div>
+                  <div className="space-y-2"><Label>Правильный вариант</Label><select name="correctAnswerIndex" className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 text-sm">{[0, 1, 2, 3].map((index) => <option key={index} value={index}>{String.fromCharCode(65 + index)}</option>)}</select></div>
                   <div className="space-y-2"><Label>Баллы</Label><Input name="points" type="number" min="1" max="1000" defaultValue="10" required /></div>
                 </div>
                 <Button type="submit"><Plus className="h-4 w-4" />Добавить вопрос</Button>
@@ -231,7 +231,7 @@ export function QuizAdminPanel({
                               <Textarea name="question" defaultValue={question.question_text} required />
                               {question.answers.map((answer, answerIndex) => <Input key={answerIndex} name={`answer${answerIndex}`} defaultValue={answer} required />)}
                               <div className="grid gap-3 sm:grid-cols-2">
-                                <div className="space-y-2"><Label>Правильный вариант</Label><select name="correctAnswerIndex" defaultValue={question.correct_answer_index} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{[0, 1, 2, 3].map((answerIndex) => <option key={answerIndex} value={answerIndex}>{String.fromCharCode(65 + answerIndex)}</option>)}</select></div>
+                                <div className="space-y-2"><Label>Правильный вариант</Label><select name="correctAnswerIndex" defaultValue={question.correct_answer_index} className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 text-sm">{[0, 1, 2, 3].map((answerIndex) => <option key={answerIndex} value={answerIndex}>{String.fromCharCode(65 + answerIndex)}</option>)}</select></div>
                                 <div className="space-y-2"><Label>Баллы</Label><Input name="points" type="number" min="1" max="1000" defaultValue={question.points} required /></div>
                               </div>
                               <DialogFooter><Button type="submit">Сохранить вопрос</Button></DialogFooter>

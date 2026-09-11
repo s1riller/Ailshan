@@ -4,8 +4,9 @@ import { cn } from "@/lib/utils";
 
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
-      <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+    <div className="relative -mx-2 w-[calc(100%+1rem)] overflow-x-auto px-2 sm:mx-0 sm:w-full sm:px-0">
+      {/* min-w заставляет таблицу прокручиваться на телефоне вместо сжатия колонок */}
+      <table ref={ref} className={cn("w-full min-w-[34rem] caption-bottom text-sm", className)} {...props} />
     </div>
   ),
 );
@@ -30,13 +31,17 @@ TableRow.displayName = "TableRow";
 
 const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<HTMLTableCellElement>>(
   ({ className, ...props }, ref) => (
-    <th ref={ref} className={cn("h-12 px-4 text-left align-middle font-medium text-muted-foreground", className)} {...props} />
+    <th
+      ref={ref}
+      className={cn("h-11 px-3 text-left align-middle font-medium text-muted-foreground sm:h-12 sm:px-4", className)}
+      {...props}
+    />
   ),
 );
 TableHead.displayName = "TableHead";
 
 const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => <td ref={ref} className={cn("p-4 align-middle", className)} {...props} />,
+  ({ className, ...props }, ref) => <td ref={ref} className={cn("p-3 align-middle sm:p-4", className)} {...props} />,
 );
 TableCell.displayName = "TableCell";
 

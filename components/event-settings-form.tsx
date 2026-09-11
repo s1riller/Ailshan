@@ -203,7 +203,7 @@ export function EventSettingsForm({ event, isPro }: EventSettingsFormProps) {
               id="liveLayout"
               name="liveLayout"
               defaultValue={event.live_layout ?? "masonry"}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 py-2 text-sm"
             >
               {liveLayouts.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -223,7 +223,7 @@ export function EventSettingsForm({ event, isPro }: EventSettingsFormProps) {
               name="liveTransition"
               defaultValue={event.live_transition ?? "fade"}
               disabled={!isPro}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               {liveTransitions.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -342,7 +342,7 @@ export function EventSettingsForm({ event, isPro }: EventSettingsFormProps) {
               name="liveQrEffect"
               defaultValue={event.live_qr_effect ?? "fade"}
               disabled={!isPro}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-11 w-full rounded-md border sm:h-10 border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               {liveQrEffects.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -478,8 +478,9 @@ export function EventSettingsForm({ event, isPro }: EventSettingsFormProps) {
         ) : null}
       </section>
 
-      <div className="sticky bottom-4 z-10 flex justify-end">
-        <Button type="submit" size="lg" className="shadow-lg">
+      {/* На телефоне поднимаем кнопку над нижней панелью навигации */}
+      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 flex justify-end lg:bottom-4">
+        <Button type="submit" size="lg" className="w-full shadow-lg sm:w-auto">
           <Save className="h-4 w-4" />
           Сохранить настройки
         </Button>

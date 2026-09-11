@@ -60,7 +60,7 @@ export default async function EventPlayPage({
   const pageTitle = event.cover_title || event.brand_name || event.title;
   if (!quiz) {
     return (
-      <main className="min-h-screen px-4 py-8">
+      <main className="min-h-screen-dvh px-4 py-8">
         <div className="mx-auto max-w-lg">
           <Card><CardHeader><Badge className="w-fit">Командный квиз</Badge><CardTitle className="pt-2">{pageTitle}</CardTitle><CardDescription>Ведущий ещё готовит игру. Откройте эту страницу немного позже.</CardDescription></CardHeader><CardContent><Button asChild variant="outline" className="w-full"><Link href={`/e/${publicSlug}`}>Вернуться к мероприятию</Link></Button></CardContent></Card>
         </div>
@@ -93,7 +93,7 @@ export default async function EventPlayPage({
   const leaderboard = teams.map((item) => ({ ...item, score: scores.get(item.id) ?? 0 })).sort((a, b) => b.score - a.score);
 
   return (
-    <main className="min-h-screen px-4 py-6 sm:py-10">
+    <main className="min-h-screen-dvh px-4 py-6 sm:py-10">
       <div className="mx-auto max-w-3xl space-y-4">
         <header className="flex items-start justify-between gap-4">
           <div><Badge>Командный квиз</Badge><h1 className="mt-3 text-2xl font-semibold sm:text-3xl">{quiz.title}</h1><p className="mt-1 text-sm text-muted-foreground">{pageTitle}</p></div>
@@ -142,7 +142,7 @@ export default async function EventPlayPage({
             ) : null}
 
             {quiz.status === "countdown" && quiz.starts_at && effectiveStatus === "countdown" ? (
-              <Card className="overflow-hidden"><CardContent className="bg-foreground py-12 text-center text-background"><BellRing className="mx-auto h-9 w-9 opacity-70" /><div className="mt-4 text-sm font-medium uppercase tracking-widest opacity-60">Квиз начинается через</div><QuizCountdown target={quiz.starts_at} className="mt-2 block text-8xl font-semibold" /><p className="mt-4 text-sm opacity-70">Соберите команду рядом и приготовьтесь обсуждать.</p></CardContent></Card>
+              <Card className="overflow-hidden"><CardContent className="bg-foreground py-12 text-center text-background"><BellRing className="mx-auto h-9 w-9 opacity-70" /><div className="mt-4 text-sm font-medium uppercase tracking-widest opacity-60">Квиз начинается через</div><QuizCountdown target={quiz.starts_at} className="mt-2 block text-7xl font-semibold sm:text-8xl" /><p className="mt-4 text-sm opacity-70">Соберите команду рядом и приготовьтесь обсуждать.</p></CardContent></Card>
             ) : null}
 
             {effectiveStatus === "active" && currentQuestion ? (
@@ -152,7 +152,7 @@ export default async function EventPlayPage({
                   {teamAnswer ? (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 p-6 text-center text-emerald-800"><CheckCircle2 className="mx-auto h-9 w-9" /><div className="mt-3 font-semibold">Ответ команды принят</div><div className="mt-1 text-sm">Ждите, пока ведущий откроет следующий вопрос.</div></div>
                   ) : (
-                    <form action={submitQuizAnswerAction} className="space-y-3"><input type="hidden" name="eventId" value={event.id} /><input type="hidden" name="quizId" value={quiz.id} /><input type="hidden" name="questionId" value={currentQuestion.id} /><input type="hidden" name="slug" value={publicSlug} /><div className="grid gap-2">{currentQuestion.answers.map((answer, index) => <label key={index} className="flex min-h-14 cursor-pointer items-center gap-3 rounded-md border p-3 text-sm transition-colors hover:bg-muted"><input type="radio" name="answerIndex" value={index} required /><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted font-semibold">{String.fromCharCode(65 + index)}</span><span className="font-medium">{answer}</span></label>)}</div><Button type="submit" size="lg" className="w-full">Ответить от команды</Button></form>
+                    <form action={submitQuizAnswerAction} className="space-y-3"><input type="hidden" name="eventId" value={event.id} /><input type="hidden" name="quizId" value={quiz.id} /><input type="hidden" name="questionId" value={currentQuestion.id} /><input type="hidden" name="slug" value={publicSlug} /><div className="grid gap-2">{currentQuestion.answers.map((answer, index) => <label key={index} className="flex min-h-16 cursor-pointer touch-manipulation items-center gap-3 rounded-lg border bg-card p-4 text-base transition-colors hover:bg-muted active:bg-secondary has-[:checked]:border-primary has-[:checked]:bg-secondary/60"><input type="radio" name="answerIndex" value={index} required className="h-5 w-5 shrink-0" /><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-semibold">{String.fromCharCode(65 + index)}</span><span className="font-medium">{answer}</span></label>)}</div><Button type="submit" size="lg" className="h-14 w-full text-base">Ответить от команды</Button></form>
                   )}
                 </CardContent>
               </Card>

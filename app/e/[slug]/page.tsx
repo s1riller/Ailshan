@@ -23,11 +23,11 @@ export default async function GuestEventPage({ params }: { params: Promise<{ slu
   }
 
   return (
-    <main className="min-h-screen px-4 py-6 sm:py-10">
+    <main className="pb-safe min-h-screen-dvh px-4 py-6 sm:py-10">
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-6">
           <p className="text-sm font-medium text-primary">Ailshan</p>
-          <h1 className="mt-2 text-3xl font-semibold leading-tight">{event.cover_title || event.brand_name || event.title}</h1>
+          <h1 className="mt-2 text-2xl font-semibold leading-tight sm:text-3xl">{event.cover_title || event.brand_name || event.title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {formatDate(event.date)} · {event.location || "Локация не указана"}
           </p>
@@ -48,7 +48,7 @@ export default async function GuestEventPage({ params }: { params: Promise<{ slu
           <p className="mt-1 text-sm text-muted-foreground">
             Создайте команду или войдите по коду друзей. Ведущий объявит старт, а вопрос появится прямо на телефоне.
           </p>
-          <Button asChild className="mt-3 w-full" variant="outline">
+          <Button asChild className="mt-3 h-12 w-full text-base" variant="outline">
             <Link href={`/e/${event.custom_slug || event.slug}/play`}>Присоединиться к квизу</Link>
           </Button>
         </div>
