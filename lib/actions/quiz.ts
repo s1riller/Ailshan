@@ -300,7 +300,7 @@ export async function createQuizTeamAction(formData: FormData) {
 
   await saveTeamSession(parsed.data.eventId, team.id, member.id);
   revalidatePath(`/e/${parsed.data.slug}/play`);
-  redirect(`/e/${parsed.data.slug}/play?joined=1`);
+  redirect(`/e/${encodeURIComponent(parsed.data.slug)}/play?joined=1`);
 }
 
 export async function joinQuizTeamAction(formData: FormData) {
@@ -323,7 +323,7 @@ export async function joinQuizTeamAction(formData: FormData) {
 
   await saveTeamSession(parsed.data.eventId, team.id, member.id);
   revalidatePath(`/e/${parsed.data.slug}/play`);
-  redirect(`/e/${parsed.data.slug}/play?joined=1`);
+  redirect(`/e/${encodeURIComponent(parsed.data.slug)}/play?joined=1`);
 }
 
 export async function leaveQuizTeamAction(formData: FormData) {
@@ -332,7 +332,7 @@ export async function leaveQuizTeamAction(formData: FormData) {
   const store = await cookies();
   store.delete(teamCookie(eventId));
   store.delete(memberCookie(eventId));
-  redirect(`/e/${slug}/play`);
+  redirect(`/e/${encodeURIComponent(slug)}/play`);
 }
 
 export async function submitQuizAnswerAction(formData: FormData) {
@@ -375,5 +375,5 @@ export async function submitQuizAnswerAction(formData: FormData) {
 
   revalidatePath(`/e/${parsed.data.slug}/play`);
   revalidatePath(`/live/${parsed.data.slug}`);
-  redirect(`/e/${parsed.data.slug}/play?answered=1`);
+  redirect(`/e/${encodeURIComponent(parsed.data.slug)}/play?answered=1`);
 }

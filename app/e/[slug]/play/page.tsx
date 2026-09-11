@@ -47,12 +47,21 @@ export default async function EventPlayPage({
   const slug = decodeURIComponent(rawSlug);
   const admin = createAdminClient();
 
-  const { data: event } = await admin
+  const { data: event, error: eventError } = await admin
     .from("events")
     .select("id, title, slug, custom_slug, brand_name, cover_title, is_active, max_file_size_mb")
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .eq("is_active", true)
-    .single();
+    .maybeSingle();
+
+  // PGRST116 = строка не найдена — это честный 404. Любая другая ошибка значит,
+  // что сломан запрос или схема, и прятать её за 404 нельзя.
+  if (eventError && eventError.code !== "PGRST116") {
+    throw new Error(
+      `Не удалось загрузить мероприятие «${slug}»: ${eventError.message}. ` +
+        "Если речь о недостающей таблице или колонке — выполните миграции из папки supabase в Supabase SQL Editor.",
+    );
+  }
   if (!event) notFound();
 
   const publicSlug = event.custom_slug || event.slug;
