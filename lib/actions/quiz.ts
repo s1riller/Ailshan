@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireActiveProfile } from "@/lib/authz";
+import { memberCookieName, teamCookieName } from "@/lib/games/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createQuizSchema,
@@ -18,8 +19,8 @@ import {
   updateQuizSchema,
 } from "@/lib/validations/quiz";
 
-const teamCookie = (eventId: string) => `ailshan_quiz_team_${eventId}`;
-const memberCookie = (eventId: string) => `ailshan_quiz_member_${eventId}`;
+const teamCookie = teamCookieName;
+const memberCookie = memberCookieName;
 
 async function requireOwnedEvent(eventId: string) {
   const { user } = await requireActiveProfile();
