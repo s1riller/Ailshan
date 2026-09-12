@@ -26,12 +26,12 @@ async function loadSerif(): Promise<ArrayBuffer | null> {
 export async function brandImage({
   title,
   subtitle,
-  overline = "Ailshan",
+  eyebrow = "Ailshan",
   accent = "#9CAB8C",
 }: {
   title: string;
   subtitle?: string | null;
-  overline?: string;
+  eyebrow?: string;
   accent?: string;
 }) {
   const serif = await loadSerif();
@@ -55,7 +55,7 @@ export async function brandImage({
       >
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <div style={{ width: 14, height: 14, borderRadius: 7, background: accent }} />
-          <div style={{ fontSize: 26, letterSpacing: 6, textTransform: "uppercase", color: "#6F6960" }}>{overline}</div>
+          <div style={{ fontSize: 26, letterSpacing: 6, textTransform: "uppercase", color: "#6F6960" }}>{eyebrow}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div style={{ fontSize: title.length > 40 ? 68 : 88, lineHeight: 1.02, letterSpacing: -1, maxWidth: 1000 }}>{title}</div>

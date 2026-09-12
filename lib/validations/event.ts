@@ -7,14 +7,14 @@ export const liveQrEffectSchema = z.enum(["fade", "slide", "pulse", "stories"]);
 export const eventSchema = z.object({
   title: z.string().min(2, "Введите название").max(120, "Слишком длинное название"),
   date: z.string().optional(),
-  location: z.string().max(160, "Слишком длинная локация").optional(),
+  location: z.string().max(160, "Слишком длинное название места").optional(),
 });
 
 export const eventSettingsSchema = z.object({
   eventId: z.string().uuid(),
   title: z.string().min(2, "Введите название").max(120, "Слишком длинное название"),
   date: z.string().optional(),
-  location: z.string().max(160, "Слишком длинная локация").optional(),
+  location: z.string().max(160, "Слишком длинное название места").optional(),
   isActive: z.boolean(),
   guestIntro: z.string().min(2, "Введите текст").max(240, "Слишком длинный текст"),
   thanksText: z.string().min(2, "Введите текст").max(240, "Слишком длинный текст"),
@@ -28,9 +28,9 @@ export const eventSettingsSchema = z.object({
   showQrOnLive: z.boolean(),
   autoApprove: z.boolean(),
   maxFileSizeMb: z.coerce.number().int().min(1).max(25),
-  customSlug: z.string().regex(/^[a-z0-9-]+$/i, "Только латиница, цифры и дефисы").max(64).optional().or(z.literal("")),
+  customSlug: z.string().regex(/^[a-z0-9-]+$/i, "В ссылке допустимы только латиница, цифры и дефисы").max(64, "Слишком длинная ссылка").optional().or(z.literal("")),
   brandName: z.string().max(80).optional(),
-  brandColor: z.string().regex(/^#[0-9a-f]{6}$/i, "HEX цвет").optional().or(z.literal("")),
+  brandColor: z.string().regex(/^#[0-9a-f]{6}$/i, "Цвет в формате #ee2a7b").optional().or(z.literal("")),
   coverTitle: z.string().max(120).optional(),
   guestInstruction: z.string().max(500).optional(),
   archiveEnabled: z.boolean(),

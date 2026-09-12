@@ -3,9 +3,9 @@ import { Check } from "lucide-react";
 import { markNotificationReadAction } from "@/lib/actions/profile";
 import { requireActiveProfile } from "@/lib/authz";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export default async function NotificationsPage() {
   const { user } = await requireActiveProfile();
@@ -16,44 +16,58 @@ export default async function NotificationsPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
   const items = notifications ?? [];
+  const unread = items.filter((item) => !item.is_read).length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Уведомления</h1>
-        <p className="text-sm text-muted-foreground">Важные события аккаунта и мероприятий.</p>
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <div className="eyebrow">Личный кабинет</div>
+        <h1 className="font-serif text-3xl font-medium sm:text-4xl">Уведомления</h1>
+        <p className="text-sm text-muted-foreground">Ответы поддержки и важные изменения по вашим событиям.</p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Все уведомления</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Уведомлений пока нет.</p>
-          ) : (
-            items.map((item) => (
-              <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border bg-background p-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{item.title}</p>
-                    {!item.is_read ? <Badge>new</Badge> : null}
+
+      <section className="space-y-1">
+        <div className="flex items-end justify-between gap-3 border-b pb-3">
+          <div>
+            <div className="eyebrow">{unread > 0 ? `Непрочитанных: ${unread}` : "Все прочитаны"}</div>
+            <h2 className="font-serif text-2xl font-medium">Лента</h2>
+          </div>
+        </div>
+        {items.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">Уведомлений пока нет.</p>
+        ) : (
+          <ul className="divide-y">
+            {items.map((item) => {
+              const date = formatDate(item.created_at);
+              return (
+                <li key={item.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className={item.is_read ? "font-medium text-muted-foreground" : "font-medium"}>{item.title}</p>
+                      {!item.is_read ? (
+                        <Badge dot variant="accent">
+                          Новое
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-muted-foreground">{item.body}</p>
+                    {date ? <p className="text-xs text-muted-foreground">{date}</p> : null}
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{item.body}</p>
-                </div>
-                {!item.is_read ? (
-                  <form action={markNotificationReadAction}>
-                    <input type="hidden" name="id" value={item.id} />
-                    <Button type="submit" size="sm" variant="outline">
-                      <Check className="h-4 w-4" />
-                      Прочитано
-                    </Button>
-                  </form>
-                ) : null}
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+                  {!item.is_read ? (
+                    <form action={markNotificationReadAction} className="sm:shrink-0">
+                      <input type="hidden" name="id" value={item.id} />
+                      <SubmitButton size="sm" variant="outline" pendingText="Отмечаем…">
+                        <Check className="h-4 w-4" />
+                        Прочитано
+                      </SubmitButton>
+                    </form>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

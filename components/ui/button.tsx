@@ -29,6 +29,8 @@ const buttonVariants = cva(
         icon: "h-11 w-11 sm:h-10 sm:w-10",
       },
     },
+    // Размер задаёт px-4, и twMerge оставил бы его — поэтому у ссылки отступы снимаются здесь
+    compoundVariants: [{ variant: "link", class: "h-auto px-0" }],
     defaultVariants: {
       variant: "default",
       size: "default",

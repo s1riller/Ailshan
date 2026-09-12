@@ -2,7 +2,7 @@
 
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,16 @@ export function FlashMessage({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  // После очистки адреса сервер перерисует страницу уже без параметра —
+  // текст держим в состоянии, иначе он исчез бы через долю секунды.
+  // Новое сообщение (после следующего экшена) подхватываем прямо в рендере:
+  // компонент при мягкой навигации не перемонтируется.
+  const [shown, setShown] = useState(message);
+  const [lastMessage, setLastMessage] = useState(message);
+  if (message !== lastMessage) {
+    setLastMessage(message);
+    if (message) setShown(message);
+  }
 
   useEffect(() => {
     if (!message) return;
@@ -40,7 +50,7 @@ export function FlashMessage({
     }
   }, [message, params, pathname, router]);
 
-  if (!message) return null;
+  if (!shown) return null;
 
   const Icon = tone === "error" ? AlertCircle : CheckCircle2;
 
@@ -55,7 +65,7 @@ export function FlashMessage({
       )}
     >
       <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <span className="text-foreground">{message}</span>
+      <span className="text-foreground">{shown}</span>
     </div>
   );
 }

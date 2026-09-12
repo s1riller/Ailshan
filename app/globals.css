@@ -136,8 +136,8 @@
     min-height: 100dvh;
   }
 
-  /* Капитель: надзаголовок секции */
-  .overline {
+  /* Капитель: надзаголовок секции (не .overline — это встроенная утилита Tailwind) */
+  .eyebrow {
     @apply text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
   }
 }

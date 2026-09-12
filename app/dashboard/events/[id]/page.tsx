@@ -1,74 +1,105 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import type { ComponentType } from "react";
-import {
-  BarChart3,
-  Check,
-  Download,
-  ExternalLink,
-  Eye,
-  Gamepad2,
-  ImageIcon,
-  MessageCircle,
-  Monitor,
-  Palette,
-  QrCode,
-  Settings,
-  ShieldCheck,
-  Users,
-  X,
-} from "lucide-react";
+import type { Metadata } from "next";
+import { Check, Download, ExternalLink, Gamepad2, Monitor, ShieldCheck, Users, X } from "lucide-react";
 
 import { CopyButton } from "@/components/copy-button";
 import { EventQrCode } from "@/components/event-qr-code";
 import { EventSettingsForm } from "@/components/event-settings-form";
+import { EventTabs } from "@/components/event-tabs";
 import { GamesAdminPanel, type PendingEntry } from "@/components/games-admin-panel";
 import { QuizAdminPanel } from "@/components/quiz-admin-panel";
+import { EventStatusBadge, UploadStatusBadge } from "@/components/status-badge";
 import { UploadPreview } from "@/components/upload-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bulkModerateUploadsAction, moderateUploadAction } from "@/lib/actions/uploads";
 import { requireActiveProfile } from "@/lib/authz";
 import { getSiteUrl } from "@/lib/env";
 import { loadContest } from "@/lib/games/contest";
+import { UPLOAD_FILTERS, joinMeta, planLabel } from "@/lib/labels";
 import { isPro } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate, plural } from "@/lib/utils";
 import type { UploadStatus } from "@/types/database";
 
-type EventTab =
-  | "overview"
-  | "uploads"
-  | "live"
-  | "games"
-  | "guests"
-  | "qr"
-  | "branding"
-  | "settings"
-  | "export"
-  | "communications";
+import { getActiveTab } from "./tabs";
 
-const tabs: Array<[EventTab, string, ComponentType<{ className?: string }>, string]> = [
-  ["overview", "Обзор", BarChart3, "Сводка"],
-  ["uploads", "Загрузки", ImageIcon, "Фото"],
-  ["live", "Live", Monitor, "Экран"],
-  ["games", "Игры", Gamepad2, "Интерактив"],
-  ["guests", "Гости", Users, "Имена"],
-  ["qr", "QR", QrCode, "Коды"],
-  ["branding", "Брендинг", Palette, "Стиль"],
-  ["settings", "Настройки", Settings, "Правила"],
-  ["export", "Экспорт", Download, "Архив"],
-  ["communications", "Коммуникации", MessageCircle, "Тексты"],
-];
+/** Название события во вкладке браузера: организатор с пятью открытыми событиями различает их */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase.from("events").select("title").eq("id", id).maybeSingle();
 
-function statusBadge(status: UploadStatus) {
-  if (status === "approved") return <Badge>Одобрено</Badge>;
-  if (status === "rejected") return <Badge variant="destructive">Отклонено</Badge>;
-  return <Badge variant="secondary">pending</Badge>;
+  return { title: data?.title ? `${data.title} · Ailshan` : "Событие · Ailshan" };
+}
+
+/* Подписи для журнала модерации: действие из базы → фраза для организатора */
+const LOG_ACTION_LABEL: Record<string, string> = {
+  approved: "Снимок одобрен",
+  rejected: "Снимок отклонён",
+  pending: "Снимок возвращён на модерацию",
+  bulk_approved: "Одобрено несколько снимков",
+  bulk_rejected: "Отклонено несколько снимков",
+};
+
+const LIVE_LAYOUT_LABEL: Record<string, string> = {
+  masonry: "Плитка",
+  featured: "Главный кадр",
+  slideshow: "Слайд-шоу",
+  compact: "Компактная сетка",
+};
+
+const LIVE_TRANSITION_LABEL: Record<string, string> = {
+  fade: "Плавное затемнение",
+  slide: "Сдвиг",
+  zoom: "Приближение",
+  stories: "Истории",
+};
+
+const timeFormatter = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : timeFormatter.format(date);
+}
+
+/** Заголовок раздела: капитель, серифный заголовок, ссылка справа и линия снизу */
+function SectionHeader({
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-end justify-between gap-3 border-b pb-3">
+      <div className="min-w-0">
+        <div className="eyebrow">{eyebrow}</div>
+        <h2 className="mt-1 font-serif text-2xl font-medium leading-tight">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      {action ? <div className="shrink-0 text-sm">{action}</div> : null}
+    </div>
+  );
+}
+
+function SectionLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground">
+      {children}
+    </Link>
+  );
 }
 
 /** Кнопки модерации: во всю ширину на телефоне, компактные в таблице */
@@ -89,37 +120,34 @@ function ModerationActions({
         <input type="hidden" name="uploadId" value={uploadId} />
         <input type="hidden" name="eventId" value={eventId} />
         <input type="hidden" name="status" value="approved" />
-        <Button
+        <SubmitButton
           size={fullWidth ? "default" : "sm"}
-          type="submit"
+          variant={status === "pending" ? "default" : "outline"}
+          pendingText="Одобряем…"
           className={fullWidth ? "w-full" : undefined}
           disabled={status === "approved"}
         >
           <Check className="h-4 w-4" />
           Одобрить
-        </Button>
+        </SubmitButton>
       </form>
       <form action={moderateUploadAction} className={fullWidth ? "w-full" : undefined}>
         <input type="hidden" name="uploadId" value={uploadId} />
         <input type="hidden" name="eventId" value={eventId} />
         <input type="hidden" name="status" value="rejected" />
-        <Button
+        <SubmitButton
           size={fullWidth ? "default" : "sm"}
-          type="submit"
           variant="outline"
+          pendingText="Отклоняем…"
           className={fullWidth ? "w-full" : undefined}
           disabled={status === "rejected"}
         >
           <X className="h-4 w-4" />
           Отклонить
-        </Button>
+        </SubmitButton>
       </form>
     </>
   );
-}
-
-function getActiveTab(value?: string): EventTab {
-  return tabs.some(([tab]) => tab === value) ? (value as EventTab) : "overview";
 }
 
 export default async function EventAdminPage({
@@ -151,9 +179,9 @@ export default async function EventAdminPage({
 
   if (eventError) {
     if (eventError.code === "PGRST116") notFound();
-    throw new Error(
-      `Не удалось загрузить мероприятие: ${eventError.message}. Примените миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push).`,
-    );
+    // Технические детали — в лог; организатору достаточно знать, что делать дальше
+    console.error("events.load", eventError);
+    throw new Error("Не удалось открыть событие. Обновите страницу через минуту — если не поможет, напишите в поддержку.");
   }
   if (!event) notFound();
 
@@ -190,6 +218,7 @@ export default async function EventAdminPage({
     .eq("event_id", event.id)
     .order("created_at", { ascending: false })
     .limit(8);
+  const guestNameByUpload = new Map(uploadItems.map((upload) => [upload.id, upload.guest_name]));
 
   const publicSlug = event.custom_slug || event.slug;
   const publicUrl = `${getSiteUrl()}/e/${publicSlug}`;
@@ -212,8 +241,9 @@ export default async function EventAdminPage({
       return map;
     }, new Map<string, { name: string; total: number; lastMessage: string; lastAt: string }>()),
   ).map(([, value]) => value);
-  const inviteText = `Привет! Загрузи фото с мероприятия «${event.title}» по ссылке:\n${publicUrl}\nФото появятся на live-экране после модерации.`;
+  const inviteText = `Дорогие гости, делитесь фотографиями с события «${event.title}» по ссылке:\n${publicUrl}\nЛучшие снимки появятся на экране в зале уже сегодня вечером.`;
   const pro = isPro(profile.plan);
+  const subtitle = joinMeta(formatDate(event.date), event.location);
   // Конкурс: баллы команд, настройки мини-игр и очередь на подтверждение
   const contest = await loadContest(event.id);
   const teamNameById = new Map(contest.teams.map((team) => [team.id, team.name]));
@@ -279,25 +309,27 @@ export default async function EventAdminPage({
     answers: question.answers as string[],
   }));
 
+  const uploadsHref = (status: string) => `/dashboard/events/${event.id}?tab=uploads${status ? `&status=${status}` : ""}`;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge variant={event.is_active ? "default" : "secondary"}>{event.is_active ? "Активно" : "Остановлено"}</Badge>
-            <Badge variant="outline">{pro ? "Pro" : "Free"}</Badge>
+      {/* Шапка события */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <EventStatusBadge isActive={event.is_active} />
             {event.auto_approve ? <Badge variant="outline">Автоодобрение</Badge> : null}
+            <span className="eyebrow">тариф {planLabel(profile.plan)}</span>
           </div>
-          <h1 className="text-2xl font-semibold">{event.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {formatDate(event.date)} · {event.location || "Локация не указана"}
-          </p>
+          <h1 className="font-serif text-3xl font-medium sm:text-4xl">{event.title}</h1>
+          {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
         <div className="grid grid-cols-3 gap-2 lg:flex lg:flex-wrap">
           <Button asChild variant="outline" className="w-full px-2 lg:w-auto lg:px-4">
             <Link href={publicUrl} target="_blank">
-              <QrCode className="h-4 w-4" />
-              Гостевая
+              <Users className="h-4 w-4" />
+              <span className="lg:hidden">Гостевая</span>
+              <span className="hidden lg:inline">Гостевая страница</span>
             </Link>
           </Button>
           <Button asChild variant="outline" className="w-full px-2 lg:w-auto lg:px-4">
@@ -306,267 +338,341 @@ export default async function EventAdminPage({
               Игры
             </Link>
           </Button>
-          <Button asChild className="w-full px-2 lg:w-auto lg:px-4">
+          <Button asChild variant="outline" className="w-full px-2 lg:w-auto lg:px-4">
             <Link href={liveUrl} target="_blank">
               <Monitor className="h-4 w-4" />
-              Live
+              <span className="lg:hidden">Проектор</span>
+              <span className="hidden lg:inline">Открыть на проекторе</span>
             </Link>
           </Button>
         </div>
       </div>
 
-      {/* На телефоне вкладки прокручиваются лентой, на десктопе раскладываются сеткой */}
-      <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:overflow-visible sm:px-0">
-        <div className="flex w-max gap-2 sm:grid sm:w-full sm:grid-cols-3 md:grid-cols-5">
-          {tabs.map(([tab, label, Icon, hint]) => (
-            <Link
-              key={tab}
-              href={`/dashboard/events/${event.id}?tab=${tab}`}
-              className={`w-28 shrink-0 rounded-lg border bg-card p-3 transition-colors hover:bg-secondary/70 sm:w-auto ${activeTab === tab ? "border-primary bg-secondary/50" : ""}`}
-            >
-              <Icon className="mb-2 h-4 w-4 text-primary" />
-              <div className="text-sm font-medium">{label}</div>
-              <div className="text-xs text-muted-foreground">{hint}</div>
-            </Link>
-          ))}
-        </div>
-      </div>
+      <EventTabs eventId={event.id} active={activeTab} />
 
       {activeTab === "overview" ? (
-        <div className="space-y-6">
+        <div className="space-y-8">
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {[
-              ["Всего фото", uploadStats.total],
-              ["На модерации", uploadStats.pending],
-              ["Одобрено", uploadStats.approved],
-              ["Отклонено", uploadStats.rejected],
-            ].map(([label, value]) => (
-              <Card key={label}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">{label}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-semibold sm:text-3xl">{value}</div>
-                </CardContent>
-              </Card>
+              ["Всего снимков", uploadStats.total, ""],
+              ["На модерации", uploadStats.pending, "pending"],
+              ["Одобрено", uploadStats.approved, "approved"],
+              ["Отклонено", uploadStats.rejected, "rejected"],
+            ].map(([label, value, filter]) => (
+              <Link key={String(label)} href={uploadsHref(String(filter))} className="group">
+                <Card className="h-full p-4 transition-colors group-hover:bg-secondary/60 sm:p-5">
+                  <div className="eyebrow">{label}</div>
+                  <div className="mt-2 font-serif tabular text-3xl font-medium">{value}</div>
+                </Card>
+              </Link>
             ))}
           </div>
-          <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Последние загрузки</CardTitle>
-                <CardDescription>Быстрый контроль свежих фото.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {signedUploads.slice(0, 6).map((upload) => (
-                  <article key={upload.id} className="overflow-hidden rounded-lg border bg-card">
-                    <div className="relative aspect-square bg-muted">
-                      {upload.signedUrl ? <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="240px" /> : null}
-                    </div>
-                    <div className="p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">{upload.guest_name}</span>
-                        {statusBadge(upload.status)}
+
+          <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
+            <section className="space-y-4">
+              <SectionHeader
+                eyebrow="Обзор"
+                title="Последние загрузки"
+                action={<SectionLink href={uploadsHref("")}>Все загрузки</SectionLink>}
+              />
+              {signedUploads.length === 0 ? (
+                <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  Снимков пока нет — гости ещё не начали.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {signedUploads.slice(0, 6).map((upload) => (
+                    <article key={upload.id} className="overflow-hidden rounded-xl border bg-card">
+                      <div className="relative aspect-square bg-secondary">
+                        {upload.signedUrl ? (
+                          <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="240px" />
+                        ) : null}
                       </div>
-                    </div>
-                  </article>
-                ))}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Быстрые ссылки</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <code className="block break-all rounded-md border bg-background p-3 text-xs">{publicUrl}</code>
-                <CopyButton value={publicUrl} label="Скопировать гостевую" />
-                <Button asChild variant="outline" className="w-full">
-                  <Link href={liveUrl} target="_blank">
-                    <ExternalLink className="h-4 w-4" />
-                    Открыть live
-                  </Link>
-                </Button>
-                <div className="rounded-md border bg-background p-3 text-sm">
-                  <div className="font-medium">Журнал модерации</div>
-                  <div className="mt-2 space-y-1 text-muted-foreground">
-                    {(logs ?? []).map((log) => (
-                      <div key={log.id}>{log.action}</div>
-                    ))}
-                  </div>
+                      <div className="space-y-1.5 p-3">
+                        <p className="truncate text-sm font-medium">{upload.guest_name}</p>
+                        <UploadStatusBadge status={upload.status} />
+                      </div>
+                    </article>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </section>
+
+            <div className="space-y-8">
+              <section className="space-y-4">
+                <SectionHeader eyebrow="Обзор" title="Быстрые ссылки" />
+                <code className="block break-all rounded-lg border bg-secondary/60 p-3 text-xs">{publicUrl}</code>
+                <div className="grid grid-cols-2 gap-2">
+                  <CopyButton value={publicUrl} label="Скопировать" className="w-full" />
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href={liveUrl} target="_blank">
+                      <ExternalLink className="h-4 w-4" />
+                      Проектор
+                    </Link>
+                  </Button>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <SectionHeader eyebrow="Обзор" title="Журнал модерации" />
+                {(logs ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Решений по снимкам пока не было.</p>
+                ) : (
+                  <ul className="divide-y text-sm">
+                    {(logs ?? []).map((log) => (
+                      <li key={log.id} className="flex items-baseline justify-between gap-3 py-2">
+                        <span className="min-w-0">
+                          <span className="block">{LOG_ACTION_LABEL[log.action] ?? log.action}</span>
+                          {log.upload_id && guestNameByUpload.get(log.upload_id) ? (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {guestNameByUpload.get(log.upload_id)}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="tabular shrink-0 text-xs text-muted-foreground">{formatTime(log.created_at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
           </div>
         </div>
       ) : null}
 
       {activeTab === "uploads" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Загрузки гостей</CardTitle>
-            <CardDescription>Фильтры, поиск, просмотр и массовая модерация.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {["", "pending", "approved", "rejected"].map((status) => (
-                <Button key={status || "all"} asChild size="sm" variant={statusFilter === status ? "default" : "outline"}>
-                  <Link href={`/dashboard/events/${event.id}?tab=uploads${status ? `&status=${status}` : ""}`}>
-                    {status || "all"}
-                  </Link>
-                </Button>
-              ))}
-            </div>
-            <form className="flex gap-2">
-              <input type="hidden" name="tab" value="uploads" />
-              <input className="flex h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-base sm:h-10 sm:text-sm" name="q" placeholder="Поиск по имени" defaultValue={query.q ?? ""} />
-              <Button type="submit" variant="outline" className="shrink-0">Найти</Button>
-            </form>
-            {signedUploads.length === 0 ? (
-              <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">Загрузок пока нет.</div>
-            ) : (
-              <>
-              <form id="bulk-moderation" action={bulkModerateUploadsAction} />
-              <div className="space-y-3">
-                <input form="bulk-moderation" type="hidden" name="eventId" value={event.id} />
-                {/* Телефон: карточки — фото крупнее, кнопки модерации под палец */}
-                <div className="space-y-3 lg:hidden">
-                  {signedUploads.map((upload) => (
-                    <article key={upload.id} className="overflow-hidden rounded-lg border bg-card">
-                      <div className="flex gap-3 p-3">
-                        <UploadPreview
-                          signedUrl={upload.signedUrl}
-                          guestName={upload.guest_name}
-                          message={upload.message}
-                          className="h-20 w-20"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="truncate font-medium">{upload.guest_name}</p>
-                            {statusBadge(upload.status)}
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{upload.message || "—"}</p>
-                          <label className="mt-2 inline-flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
-                            <input
-                              form="bulk-moderation"
-                              type="checkbox"
-                              name="uploadIds"
-                              value={upload.id}
-                              className="h-5 w-5 rounded border-input"
-                            />
-                            Выбрать
-                          </label>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 border-t bg-background/60 p-3">
-                        <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} fullWidth />
-                      </div>
-                    </article>
-                  ))}
-                </div>
+        <section className="space-y-4">
+          <SectionHeader
+            eyebrow="Модерация"
+            title="Загрузки гостей"
+            description={`${plural(uploadStats.total, "снимок", "снимка", "снимков")}, ${uploadStats.pending} на модерации.`}
+          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+              {UPLOAD_FILTERS.map(([value, label]) => {
+                const active = statusFilter === value;
 
-                <div className="hidden lg:block">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead></TableHead>
-                        <TableHead>Фото</TableHead>
-                        <TableHead>Гость</TableHead>
-                        <TableHead>Пожелание</TableHead>
-                        <TableHead>Статус</TableHead>
-                        <TableHead className="text-right">Действия</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {signedUploads.map((upload) => (
-                        <TableRow key={upload.id}>
-                          <TableCell>
-                            <input form="bulk-moderation" type="checkbox" name="uploadIds" value={upload.id} className="h-4 w-4" />
-                          </TableCell>
-                          <TableCell>
-                            <UploadPreview
-                              signedUrl={upload.signedUrl}
-                              guestName={upload.guest_name}
-                              message={upload.message}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{upload.guest_name}</TableCell>
-                          <TableCell className="max-w-[280px] text-muted-foreground">{upload.message || "—"}</TableCell>
-                          <TableCell>{statusBadge(upload.status)}</TableCell>
-                          <TableCell>
-                            <div className="flex justify-end gap-2">
-                              <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="grid gap-2 sm:flex sm:flex-wrap">
-                  <input form="bulk-moderation" type="hidden" name="eventId" value={event.id} />
-                  <Button form="bulk-moderation" type="submit" name="status" value="approved" className="w-full sm:w-auto">
-                    <ShieldCheck className="h-4 w-4" />
-                    Одобрить выбранные
-                  </Button>
-                  <Button form="bulk-moderation" type="submit" name="status" value="rejected" variant="outline" className="w-full sm:w-auto">
-                    <X className="h-4 w-4" />
-                    Отклонить выбранные
-                  </Button>
-                </div>
+                return (
+                  <Link
+                    key={value || "all"}
+                    href={uploadsHref(value)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-sm font-medium transition-colors",
+                      active ? "border-accent bg-accent-soft text-accent" : "bg-card text-foreground hover:bg-secondary",
+                    )}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+            <form className="flex gap-2 sm:w-80">
+              <input type="hidden" name="tab" value="uploads" />
+              {statusFilter ? <input type="hidden" name="status" value={statusFilter} /> : null}
+              <Input name="q" placeholder="Поиск по имени" defaultValue={query.q ?? ""} aria-label="Поиск по имени" />
+              <Button type="submit" variant="outline" className="shrink-0">
+                Найти
+              </Button>
+            </form>
+          </div>
+
+          {signedUploads.length === 0 ? (
+            <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+              {search || statusFilter ? "По этому запросу снимков нет." : "Снимков пока нет — гости ещё не начали."}
+            </p>
+          ) : (
+            <>
+              {/* Телефон: карточки — фото крупнее, кнопки модерации под палец */}
+              <div className="space-y-3 lg:hidden">
+                {signedUploads.map((upload) => (
+                  <article key={upload.id} className="overflow-hidden rounded-xl border bg-card">
+                    <div className="flex gap-3 p-3">
+                      <UploadPreview
+                        signedUrl={upload.signedUrl}
+                        guestName={upload.guest_name}
+                        message={upload.message}
+                        className="h-20 w-20"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate font-medium">{upload.guest_name}</p>
+                          <UploadStatusBadge status={upload.status} className="shrink-0" />
+                        </div>
+                        {upload.message ? (
+                          <p className="mt-1 line-clamp-2 font-serif text-base leading-snug">{upload.message}</p>
+                        ) : (
+                          <p className="mt-1 text-sm text-muted-foreground">Без пожелания</p>
+                        )}
+                        <label className="mt-2 inline-flex min-h-8 items-center gap-2 text-xs text-muted-foreground">
+                          <input
+                            form="bulk-moderation"
+                            type="checkbox"
+                            name="uploadIds"
+                            value={upload.id}
+                            className="h-5 w-5 rounded border-input"
+                          />
+                          Выбрать
+                        </label>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 border-t p-3">
+                      <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} fullWidth />
+                    </div>
+                  </article>
+                ))}
               </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+
+              <div className="hidden lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        <span className="sr-only">Выбрать</span>
+                      </TableHead>
+                      <TableHead>Фото</TableHead>
+                      <TableHead>Гость</TableHead>
+                      <TableHead>Пожелание</TableHead>
+                      <TableHead>Статус</TableHead>
+                      <TableHead className="text-right">Действия</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {signedUploads.map((upload) => (
+                      <TableRow key={upload.id}>
+                        <TableCell>
+                          <input
+                            form="bulk-moderation"
+                            type="checkbox"
+                            name="uploadIds"
+                            value={upload.id}
+                            aria-label={`Выбрать снимок: ${upload.guest_name}`}
+                            className="h-4 w-4 rounded border-input"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <UploadPreview
+                            signedUrl={upload.signedUrl}
+                            guestName={upload.guest_name}
+                            message={upload.message}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{upload.guest_name}</TableCell>
+                        <TableCell className={cn("max-w-[280px]", upload.message ? "font-serif text-base" : "text-muted-foreground")}>
+                          {upload.message || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <UploadStatusBadge status={upload.status} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-2">
+                            <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/*
+                Форма массовой модерации: чекбоксы в карточках и таблице привязаны к ней
+                через атрибут form, а кнопки лежат внутри — иначе они не узнают о состоянии отправки.
+              */}
+              <form
+                id="bulk-moderation"
+                action={bulkModerateUploadsAction}
+                className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center"
+              >
+                <input type="hidden" name="eventId" value={event.id} />
+                <span className="text-sm text-muted-foreground sm:mr-auto">Для отмеченных снимков</span>
+                <SubmitButton name="status" value="approved" variant="outline" pendingText="Одобряем…" className="w-full sm:w-auto">
+                  <ShieldCheck className="h-4 w-4" />
+                  Одобрить выбранные
+                </SubmitButton>
+                <SubmitButton name="status" value="rejected" variant="outline" pendingText="Отклоняем…" className="w-full sm:w-auto">
+                  <X className="h-4 w-4" />
+                  Отклонить выбранные
+                </SubmitButton>
+              </form>
+            </>
+          )}
+        </section>
       ) : null}
 
       {activeTab === "live" ? (
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Live preview</CardTitle>
-              <CardDescription>Режим: {event.live_layout}, эффект: {event.live_transition ?? "fade"}.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-hidden rounded-lg border bg-[hsl(var(--live-background))] p-4 text-[hsl(var(--live-foreground))]">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="font-semibold">{event.cover_title || event.brand_name || event.title}</span>
-                  <Badge>{event.slide_duration_seconds ?? 5}s</Badge>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
+        <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Экран зала"
+              title="Предпросмотр экрана"
+              description="Так снимки выглядят на проекторе — первые одобренные кадры."
+            />
+            <div className="overflow-hidden rounded-xl bg-live p-4 text-live-foreground sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <span className="truncate font-serif text-xl font-medium">
+                  {event.cover_title || event.brand_name || event.title}
+                </span>
+                <span className="tabular shrink-0 text-xs text-live-muted">
+                  кадр каждые {event.slide_duration_seconds ?? 5} с
+                </span>
+              </div>
+              {signedUploads.length === 0 ? (
+                <p className="py-10 text-center text-sm text-live-muted">
+                  Экран пока пуст — первые одобренные снимки появятся здесь.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   {signedUploads.slice(0, 6).map((upload, index) => (
-                    <div key={upload.id} className={`relative overflow-hidden rounded-md bg-card/10 ${index === 0 ? "col-span-2 row-span-2 aspect-square" : "aspect-square"}`}>
-                      {upload.signedUrl ? <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="240px" /> : null}
+                    <div
+                      key={upload.id}
+                      className={cn(
+                        "relative overflow-hidden rounded-lg bg-live-foreground/10",
+                        index === 0 ? "col-span-2 row-span-2 aspect-square" : "aspect-square",
+                      )}
+                    >
+                      {upload.signedUrl ? (
+                        <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="240px" />
+                      ) : null}
                     </div>
                   ))}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Настройки Live</CardTitle>
-              <CardDescription>Меняются во вкладке “Настройки”.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div>Макет: <strong>{event.live_layout}</strong></div>
-              <div>Эффект: <strong>{event.live_transition ?? "fade"}</strong></div>
-              <div>Имена: <strong>{event.show_names_on_live ? "да" : "нет"}</strong></div>
-              <div>Пожелания: <strong>{event.show_messages_on_live ? "да" : "нет"}</strong></div>
-              <div>QR: <strong>{event.show_qr_on_live ? "да" : "нет"}</strong></div>
-              <Button asChild className="mt-4 w-full">
-                <Link href={liveUrl} target="_blank">
-                  <Eye className="h-4 w-4" />
-                  Открыть fullscreen
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+              )}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Экран зала"
+              title="Параметры экрана"
+              action={<SectionLink href={`/dashboard/events/${event.id}?tab=settings`}>Изменить</SectionLink>}
+            />
+            <dl className="divide-y text-sm">
+              {[
+                ["Раскладка", LIVE_LAYOUT_LABEL[event.live_layout ?? "masonry"] ?? event.live_layout],
+                ["Эффект", LIVE_TRANSITION_LABEL[event.live_transition ?? "fade"] ?? event.live_transition],
+                ["Имена гостей", event.show_names_on_live ? "показываются" : "скрыты"],
+                ["Пожелания", event.show_messages_on_live ? "показываются" : "скрыты"],
+                ["QR-код", event.show_qr_on_live ? "показывается" : "скрыт"],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="text-right font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <Button asChild variant="outline" className="w-full">
+              <Link href={liveUrl} target="_blank">
+                <Monitor className="h-4 w-4" />
+                Открыть на проекторе
+              </Link>
+            </Button>
+          </section>
         </div>
       ) : null}
 
       {activeTab === "games" ? (
-        <div className="space-y-6">
+        <div className="space-y-10">
           <QuizAdminPanel
             eventId={event.id}
             playUrl={playUrl}
@@ -586,17 +692,22 @@ export default async function EventAdminPage({
       ) : null}
 
       {activeTab === "guests" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Гости</CardTitle>
-            <CardDescription>Список имен из загрузок и активность гостей.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <section className="space-y-4">
+          <SectionHeader
+            eyebrow="Гости"
+            title="Кто загружал"
+            description={`${plural(guests.length, "гость", "гостя", "гостей")} оставили снимки.`}
+          />
+          {guests.length === 0 ? (
+            <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+              Имена появятся, когда гости загрузят первые снимки.
+            </p>
+          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Имя</TableHead>
-                  <TableHead>Фото</TableHead>
+                  <TableHead>Снимков</TableHead>
                   <TableHead>Последнее пожелание</TableHead>
                 </TableRow>
               </TableHeader>
@@ -604,91 +715,113 @@ export default async function EventAdminPage({
                 {guests.map((guest) => (
                   <TableRow key={guest.name}>
                     <TableCell className="font-medium">{guest.name}</TableCell>
-                    <TableCell>{guest.total}</TableCell>
-                    <TableCell className="text-muted-foreground">{guest.lastMessage || "—"}</TableCell>
+                    <TableCell className="tabular">{guest.total}</TableCell>
+                    <TableCell className={guest.lastMessage ? "font-serif text-base" : "text-muted-foreground"}>
+                      {guest.lastMessage || "—"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          )}
+        </section>
       ) : null}
 
       {activeTab === "qr" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
-            <CardHeader>
-              <CardTitle>QR для гостей</CardTitle>
-              <CardDescription>Для печати, экрана или рассылки.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <EventQrCode value={publicUrl} title={event.cover_title || event.brand_name || event.title} color={event.brand_color} />
-              <code className="block break-all rounded-md border bg-background p-3 text-xs">{publicUrl}</code>
-              <CopyButton value={publicUrl} />
+            <CardContent className="space-y-4 p-5 sm:p-6">
+              <div>
+                <div className="eyebrow">Для гостей</div>
+                <h2 className="mt-1 font-serif text-2xl font-medium">QR на столы и в приглашение</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Для печати, экрана или рассылки.</p>
+              </div>
+              <EventQrCode
+                value={publicUrl}
+                title={event.cover_title || event.brand_name || event.title}
+                color={event.brand_color}
+              />
+              <code className="block break-all rounded-lg border bg-secondary/60 p-3 text-xs">{publicUrl}</code>
+              <CopyButton value={publicUrl} label="Скопировать ссылку" className="w-full" />
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <CardTitle>QR для Live</CardTitle>
-              <CardDescription>Полезно для backstage или технической команды.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <EventQrCode value={liveUrl} title="Live экран" color={event.brand_color} />
-              <code className="block break-all rounded-md border bg-background p-3 text-xs">{liveUrl}</code>
-              <CopyButton value={liveUrl} />
+            <CardContent className="space-y-4 p-5 sm:p-6">
+              <div>
+                <div className="eyebrow">Для технической команды</div>
+                <h2 className="mt-1 font-serif text-2xl font-medium">QR для экрана зала</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Чтобы открыть экран на проекторе с любого устройства.</p>
+              </div>
+              <EventQrCode value={liveUrl} title="Экран зала" color={event.brand_color} />
+              <code className="block break-all rounded-lg border bg-secondary/60 p-3 text-xs">{liveUrl}</code>
+              <CopyButton value={liveUrl} label="Скопировать ссылку" className="w-full" />
             </CardContent>
           </Card>
         </div>
       ) : null}
 
       {activeTab === "branding" || activeTab === "settings" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{activeTab === "branding" ? "Брендинг и тексты" : "Настройки мероприятия"}</CardTitle>
-            <CardDescription>Все параметры события собраны в одной форме.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EventSettingsForm event={event} isPro={pro} />
-          </CardContent>
-        </Card>
+        <section className="space-y-4">
+          <SectionHeader
+            eyebrow={activeTab === "branding" ? "Оформление" : "Настройки"}
+            title={activeTab === "branding" ? "Оформление и тексты" : "Настройки события"}
+            description="Все параметры события собраны в одной форме."
+          />
+          <Card>
+            <CardContent className="p-5 sm:p-6">
+              <EventSettingsForm event={event} isPro={pro} />
+            </CardContent>
+          </Card>
+        </section>
       ) : null}
 
       {activeTab === "export" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Экспорт</CardTitle>
-            <CardDescription>Архив фото и CSV пожеланий.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button asChild>
+        <section className="space-y-4">
+          <SectionHeader
+            eyebrow="После события"
+            title="Экспорт"
+            description="Архив фотографий и файл с пожеланиями."
+          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Button asChild variant="outline" className="w-full sm:w-auto">
               <Link href={`/dashboard/events/${event.id}/export`}>
                 <Download className="h-4 w-4" />
                 Открыть экспорт
               </Link>
             </Button>
-            {!pro ? <p className="text-sm text-muted-foreground">Экспорт архива доступен в Pro.</p> : null}
-          </CardContent>
-        </Card>
+            {!pro ? <p className="text-sm text-muted-foreground">Архив доступен на тарифе Премиум.</p> : null}
+          </div>
+        </section>
       ) : null}
 
       {activeTab === "communications" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Коммуникации</CardTitle>
-            <CardDescription>Готовые тексты для WhatsApp, Telegram или email.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Приглашение гостям</div>
-              <textarea className="min-h-36 w-full rounded-md border bg-background p-3 text-sm" readOnly value={inviteText} />
-              <CopyButton value={inviteText} label="Скопировать приглашение" />
+        <section className="space-y-4">
+          <SectionHeader eyebrow="Гостям" title="Приглашение" description="Готовые тексты для мессенджеров и почты." />
+          <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+            <div className="space-y-3">
+              <label htmlFor="invite-text" className="text-sm font-medium">
+                Текст приглашения
+              </label>
+              <textarea
+                id="invite-text"
+                rows={7}
+                className="w-full rounded-lg border bg-card p-3 font-serif text-base leading-relaxed"
+                readOnly
+                value={inviteText}
+              />
+              <CopyButton value={inviteText} label="Скопировать приглашение" className="w-full sm:w-auto" />
             </div>
-            <div className="rounded-md border bg-background p-3 text-sm">
-              <div className="font-medium">Инструкция на странице</div>
-              <p className="mt-1 text-muted-foreground">{event.guest_instruction}</p>
+            <div className="space-y-2 rounded-xl border bg-card p-4 text-sm">
+              <div className="eyebrow">Подсказка на гостевой странице</div>
+              <p className="text-muted-foreground">
+                {event.guest_instruction || "Не задана — добавьте её во вкладке «Настройки»."}
+              </p>
+              <p className="pt-2">
+                <SectionLink href={`/dashboard/events/${event.id}?tab=settings`}>Изменить тексты</SectionLink>
+              </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
     </div>
   );

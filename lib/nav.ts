@@ -25,22 +25,22 @@ export type NavItem = {
 
 export const dashboardNav: NavItem[] = [
   { href: "/dashboard", label: "Обзор", short: "Обзор", icon: LayoutDashboard, primary: true },
-  { href: "/dashboard/events", label: "Мероприятия", short: "События", icon: CalendarDays, primary: true },
+  { href: "/dashboard/events", label: "События", short: "События", icon: CalendarDays, primary: true },
   { href: "/dashboard/media", label: "Медиа", short: "Медиа", icon: Images, primary: true },
-  { href: "/dashboard/notifications", label: "Уведомления", short: "Сигналы", icon: Bell },
+  { href: "/dashboard/notifications", label: "Уведомления", short: "Уведомления", icon: Bell },
   { href: "/dashboard/account", label: "Профиль", short: "Профиль", icon: User, primary: true },
   { href: "/dashboard/settings", label: "Настройки", short: "Настройки", icon: Settings },
-  { href: "/dashboard/upgrade", label: "Upgrade", short: "Upgrade", icon: Crown },
-  { href: "/dashboard/support", label: "Поддержка", short: "Помощь", icon: LifeBuoy },
+  { href: "/dashboard/upgrade", label: "Тариф", short: "Тариф", icon: Crown },
+  { href: "/dashboard/support", label: "Поддержка", short: "Поддержка", icon: LifeBuoy },
 ];
 
 export const adminNav: NavItem[] = [
-  { href: "/admin", label: "Статистика", short: "Обзор", icon: BarChart3, primary: true },
-  { href: "/admin/users", label: "Пользователи", short: "Юзеры", icon: Users, primary: true },
-  { href: "/admin/events", label: "Мероприятия", short: "События", icon: CalendarDays, primary: true },
-  { href: "/admin/uploads", label: "Загрузки", short: "Фото", icon: Images, primary: true },
+  { href: "/admin", label: "Обзор", short: "Обзор", icon: BarChart3, primary: true },
+  { href: "/admin/users", label: "Организаторы", short: "Аккаунты", icon: Users, primary: true },
+  { href: "/admin/events", label: "События", short: "События", icon: CalendarDays, primary: true },
+  { href: "/admin/uploads", label: "Фото", short: "Фото", icon: Images, primary: true },
   { href: "/admin/applications", label: "Заявки", short: "Заявки", icon: Inbox },
-  { href: "/admin/support", label: "Поддержка", short: "Помощь", icon: LifeBuoy },
+  { href: "/admin/support", label: "Поддержка", short: "Поддержка", icon: LifeBuoy },
 ];
 
 export function isNavItemActive(pathname: string, href: string, rootHref: string): boolean {

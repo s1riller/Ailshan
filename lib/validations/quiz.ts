@@ -35,16 +35,20 @@ export const createTeamSchema = z.object({
   eventId: z.string().uuid(),
   quizId: z.string().uuid(),
   slug: z.string().min(1),
-  guestName: z.string().trim().min(2, "Введите ваше имя").max(80),
-  teamName: z.string().trim().min(2, "Введите название команды").max(60),
+  guestName: z.string().trim().min(2, "Введите ваше имя").max(80, "Слишком длинное имя"),
+  teamName: z.string().trim().min(2, "Введите название команды").max(60, "Слишком длинное название"),
 });
 
 export const joinTeamSchema = z.object({
   eventId: z.string().uuid(),
   quizId: z.string().uuid(),
   slug: z.string().min(1),
-  guestName: z.string().trim().min(2, "Введите ваше имя").max(80),
-  joinCode: z.string().trim().min(4).max(8).transform((value) => value.toUpperCase()),
+  guestName: z.string().trim().min(2, "Введите ваше имя").max(80, "Слишком длинное имя"),
+  joinCode: z
+    .string()
+    .trim()
+    .transform((value) => value.toUpperCase())
+    .pipe(z.string().regex(/^[A-Z0-9]{4,8}$/, "Код состоит из 4–8 букв и цифр")),
 });
 
 export const quizAnswerSchema = z.object({

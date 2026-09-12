@@ -1,91 +1,104 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, Clock, Images, Inbox, Users } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EventStatusBadge } from "@/components/status-badge";
+import { joinMeta } from "@/lib/labels";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/utils";
 
 export default async function AdminPage() {
   const admin = createAdminClient();
-  const [usersResult, eventsResult, activeEventsResult, uploadsResult, pendingUploadsResult, approvedUploadsResult, applicationsResult, openTicketsResult] =
-    await Promise.all([
-      admin.from("profiles").select("*", { count: "exact", head: true }),
-      admin.from("events").select("*", { count: "exact", head: true }),
-      admin.from("events").select("*", { count: "exact", head: true }).eq("is_active", true),
-      admin.from("uploads").select("*", { count: "exact", head: true }),
-      admin.from("uploads").select("*", { count: "exact", head: true }).eq("status", "pending"),
-      admin.from("uploads").select("*", { count: "exact", head: true }).eq("status", "approved"),
-      admin.from("applications").select("*", { count: "exact", head: true }).eq("status", "new"),
-      admin.from("support_tickets").select("*", { count: "exact", head: true }).neq("status", "closed"),
-    ]);
-  const users = usersResult.count ?? 0;
-  const events = eventsResult.count ?? 0;
-  const activeEvents = activeEventsResult.count ?? 0;
-  const uploads = uploadsResult.count ?? 0;
-  const pendingUploads = pendingUploadsResult.count ?? 0;
-  const approvedUploads = approvedUploadsResult.count ?? 0;
-  const applications = applicationsResult.count ?? 0;
-  const openTickets = openTicketsResult.count ?? 0;
+  const [
+    usersResult,
+    eventsResult,
+    activeEventsResult,
+    uploadsResult,
+    pendingUploadsResult,
+    approvedUploadsResult,
+    applicationsResult,
+    openTicketsResult,
+    latestResult,
+  ] = await Promise.all([
+    admin.from("profiles").select("*", { count: "exact", head: true }),
+    admin.from("events").select("*", { count: "exact", head: true }),
+    admin.from("events").select("*", { count: "exact", head: true }).eq("is_active", true),
+    admin.from("uploads").select("*", { count: "exact", head: true }),
+    admin.from("uploads").select("*", { count: "exact", head: true }).eq("status", "pending"),
+    admin.from("uploads").select("*", { count: "exact", head: true }).eq("status", "approved"),
+    admin.from("applications").select("*", { count: "exact", head: true }).eq("status", "new"),
+    admin.from("support_tickets").select("*", { count: "exact", head: true }).neq("status", "closed"),
+    admin
+      .from("events")
+      .select("id, title, date, location, created_at, is_active")
+      .order("created_at", { ascending: false })
+      .limit(5),
+  ]);
 
-  const { data: latestEvents = [] } = await admin
-    .from("events")
-    .select("id, title, slug, created_at, is_active")
-    .order("created_at", { ascending: false })
-    .limit(5);
-  const latestEventItems = latestEvents ?? [];
+  const latestEvents = latestResult.data ?? [];
 
-  const stats = [
-    ["Пользователи", users, Users],
-    ["Мероприятия", events, CalendarDays],
-    ["Активные", activeEvents, CheckCircle2],
-    ["Фото", uploads, Images],
-    ["Pending", pendingUploads, Clock],
-    ["Approved", approvedUploads, CheckCircle2],
-    ["Новые заявки", applications, Inbox],
-    ["Открытая поддержка", openTickets, Inbox],
-  ] as const;
+  const stats: Array<[label: string, value: number]> = [
+    ["Организаторов", usersResult.count ?? 0],
+    ["Событий", eventsResult.count ?? 0],
+    ["Принимают фото", activeEventsResult.count ?? 0],
+    ["Снимков", uploadsResult.count ?? 0],
+    ["На модерации", pendingUploadsResult.count ?? 0],
+    ["Одобрено", approvedUploadsResult.count ?? 0],
+    ["Новых заявок", applicationsResult.count ?? 0],
+    ["Открытых обращений", openTicketsResult.count ?? 0],
+  ];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Статистика платформы</h1>
-        <p className="text-sm text-muted-foreground">Обзор Ailshan как SaaS-продукта.</p>
+    <div className="space-y-8 sm:space-y-10">
+      <div className="space-y-2">
+        <div className="eyebrow">Управление платформой</div>
+        <h1 className="font-serif text-3xl font-medium sm:text-4xl">Обзор</h1>
+        <p className="text-sm text-muted-foreground">Организаторы, события, снимки и обращения по всей платформе.</p>
       </div>
+
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {stats.map(([label, value, Icon]) => (
-          <Card key={label}>
-            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm">{label}</CardTitle>
-              <Icon className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold sm:text-3xl">{value}</div>
-            </CardContent>
-          </Card>
+        {stats.map(([label, value]) => (
+          <div key={label} className="rounded-xl border bg-card p-4 sm:p-5">
+            <div className="eyebrow">{label}</div>
+            <div className="font-serif tabular mt-2 text-3xl font-medium sm:text-4xl">{value}</div>
+          </div>
         ))}
       </div>
-      <Card>
-        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle>Последние мероприятия</CardTitle>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/admin/events">Все мероприятия</Link>
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {latestEventItems.map((event) => (
-            <div key={event.id} className="flex items-center justify-between rounded-md border bg-background p-3">
-              <div>
-                <p className="font-medium">{event.title}</p>
-                <p className="text-sm text-muted-foreground">{event.slug}</p>
-              </div>
-              <Badge variant={event.is_active ? "default" : "secondary"}>
-                {event.is_active ? "active" : "paused"}
-              </Badge>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+
+      <section className="space-y-1">
+        <div className="flex items-end justify-between gap-3 border-b pb-3">
+          <div>
+            <div className="eyebrow">Список</div>
+            <h2 className="font-serif text-2xl font-medium">Последние события</h2>
+          </div>
+          <Link
+            href="/admin/events"
+            className="text-sm underline decoration-border underline-offset-4 hover:decoration-foreground"
+          >
+            Все
+          </Link>
+        </div>
+        {latestEvents.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">Событий на платформе пока нет.</p>
+        ) : (
+          <ul className="divide-y">
+            {latestEvents.map((event) => {
+              const created = formatDate(event.created_at);
+              const meta = joinMeta(
+                joinMeta(formatDate(event.date), event.location) || "Дата не задана",
+                created && `создано ${created}`,
+              );
+              return (
+                <li key={event.id} className="flex min-h-[60px] items-center justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{event.title}</p>
+                    <p className="truncate text-sm text-muted-foreground">{meta}</p>
+                  </div>
+                  <EventStatusBadge isActive={event.is_active} className="shrink-0" />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

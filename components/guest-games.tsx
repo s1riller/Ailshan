@@ -1,21 +1,16 @@
-import Image from "next/image";
-import { CheckCircle2, Clock3, Lock, Sparkles, ThumbsUp, XCircle } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 
+import { ContestPhotoVote, type VotablePhoto } from "@/components/contest-photo-vote";
 import { GamePhotoForm } from "@/components/game-photo-form";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Textarea } from "@/components/ui/textarea";
-import { submitGameEntryAction, voteForPhotoAction } from "@/lib/actions/games";
+import { submitGameEntryAction } from "@/lib/actions/games";
 import { pickTaskForTeam } from "@/lib/games/catalog";
 import type { ContestEntry, ResolvedGame } from "@/lib/games/contest";
+import { plural } from "@/lib/utils";
 
-export type VotablePhoto = {
-  id: string;
-  guestName: string;
-  signedUrl: string;
-  votes: number;
-};
+export type { VotablePhoto };
 
 type GuestGamesProps = {
   eventId: string;
@@ -28,6 +23,17 @@ type GuestGamesProps = {
   maxFileSizeMb: number;
 };
 
+type GameState = "open" | "done" | "host";
+
+type GameRow = {
+  game: ResolvedGame;
+  entries: ContestEntry[];
+  earned: number;
+  pendingCount: number;
+  rejectedCount: number;
+  state: GameState;
+};
+
 function HiddenGameFields({ eventId, slug, gameType }: { eventId: string; slug: string; gameType: string }) {
   return (
     <>
@@ -36,6 +42,64 @@ function HiddenGameFields({ eventId, slug, gameType }: { eventId: string; slug: 
       <input type="hidden" name="gameType" value={gameType} />
     </>
   );
+}
+
+function buildRows(games: ResolvedGame[], teamEntries: ContestEntry[], hasVoted: boolean): GameRow[] {
+  const rows = games.map<GameRow>((game) => {
+    const { definition } = game;
+    const entries = teamEntries.filter((entry) => entry.gameType === definition.type);
+    const earned = entries.filter((entry) => entry.status === "approved").reduce((sum, entry) => sum + entry.score, 0);
+    const pendingCount = entries.filter((entry) => entry.status === "pending").length;
+    const rejectedCount = entries.filter((entry) => entry.status === "rejected").length;
+
+    let state: GameState = "open";
+    if (definition.input === "host") state = "host";
+    else if (definition.input === "vote" ? hasVoted : !definition.allowsMultipleEntries && entries.length > 0) state = "done";
+
+    return { game, entries, earned, pendingCount, rejectedCount, state };
+  });
+
+  // Сначала то, во что можно играть, затем сыгранное, в конце конкурсы в зале
+  const order: Record<GameState, number> = { open: 0, done: 1, host: 2 };
+  return rows.sort((a, b) => order[a.state] - order[b.state]);
+}
+
+/** Чип статуса справа в строке игры; для открытой игры — только баллы */
+function GameStatus({ row }: { row: GameRow }) {
+  const { state, earned, pendingCount, rejectedCount, entries, game } = row;
+  const points = game.config.points;
+
+  if (earned > 0) {
+    return (
+      <Badge dot variant="success" className="tabular">
+        +{earned}
+      </Badge>
+    );
+  }
+  if (pendingCount > 0) {
+    return (
+      <Badge dot variant="warning">
+        На проверке
+      </Badge>
+    );
+  }
+  if (rejectedCount > 0 && entries.length === rejectedCount && state === "done") {
+    return (
+      <Badge dot variant="destructive">
+        Не засчитано
+      </Badge>
+    );
+  }
+  if (state === "host") {
+    return <Badge variant="secondary">В зале</Badge>;
+  }
+  if (state === "done") {
+    // Ответ проверен и оказался неверным: команда участвовала, но без баллов
+    const checkedWithoutPoints = game.definition.hasCorrectOption && entries.some((entry) => entry.status === "approved");
+    return <Badge variant="secondary">{checkedWithoutPoints ? "Без баллов" : "Сыграно"}</Badge>;
+  }
+
+  return <span className="tabular text-sm text-muted-foreground">{points} б.</span>;
 }
 
 export function GuestGames({
@@ -50,89 +114,120 @@ export function GuestGames({
 }: GuestGamesProps) {
   if (games.length === 0) return null;
 
+  if (!teamId) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {plural(games.length, "игра откроется", "игры откроются", "игр откроются")} после вступления в команду.
+      </p>
+    );
+  }
+
+  const rows = buildRows(games, teamEntries, hasVoted);
+  const firstOpenIndex = rows.findIndex((row) => row.state === "open");
+  const openCount = rows.filter((row) => row.state === "open").length;
+
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Мини-игры конкурса</h2>
-        <Badge variant="secondary">{games.length}</Badge>
+    <section className="space-y-3" aria-labelledby="games-heading">
+      <div className="flex items-end justify-between gap-3 border-b pb-3">
+        <div>
+          <div className="eyebrow">Игры</div>
+          <h2 id="games-heading" className="font-serif text-2xl font-medium">
+            {openCount > 0 ? `${plural(openCount, "игра открыта", "игры открыты", "игр открыто")}` : "Все игры сыграны"}
+          </h2>
+        </div>
       </div>
 
-      {games.map((game) => {
-        const { definition, config } = game;
-        const entries = teamEntries.filter((entry) => entry.gameType === definition.type);
-        const approved = entries.filter((entry) => entry.status === "approved");
-        const pending = entries.filter((entry) => entry.status === "pending");
-        const earned = approved.reduce((sum, entry) => sum + entry.score, 0);
-        const usedUp = !definition.allowsMultipleEntries && entries.length > 0;
-        const Icon = definition.icon;
+      <ul className="divide-y">
+        {rows.map((row, index) => {
+          const { game, state } = row;
+          const number = String(index + 1).padStart(2, "0");
 
-        return (
-          <Card key={definition.type}>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Icon className="h-5 w-5 shrink-0 text-primary" />
-                  {config.title}
-                </CardTitle>
-                <Badge variant="secondary" className="shrink-0">
-                  {config.points} б.
-                </Badge>
-              </div>
-              {config.prompt ? <CardDescription className="pt-1">{config.prompt}</CardDescription> : null}
-            </CardHeader>
-
-            <CardContent className="space-y-3">
-              {approved.length > 0 ? (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  Засчитано: +{earned} баллов команде
+          if (state === "host") {
+            return (
+              <li key={game.definition.type} className="flex min-h-14 items-center gap-3 py-3">
+                <span className="font-serif tabular w-7 shrink-0 text-lg text-muted-foreground">{number}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{game.config.title}</div>
+                  <div className="truncate text-xs text-muted-foreground">Баллы начисляет ведущий</div>
                 </div>
-              ) : null}
+                <GameStatus row={row} />
+              </li>
+            );
+          }
 
-              {pending.length > 0 ? (
-                <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">
-                  <Clock3 className="h-4 w-4 shrink-0" />
-                  {pending.length === 1 ? "Ответ ждёт проверки ведущего" : `${pending.length} ответов ждут проверки`}
+          return (
+            <li key={game.definition.type}>
+              {/* Ключ со статусом: сыгранная игра перемонтируется закрытой, а не остаётся раскрытой после ответа */}
+              <details key={`${game.definition.type}-${state}`} className="group" open={index === firstOpenIndex}>
+                <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 py-3 [&::-webkit-details-marker]:hidden">
+                  <span className="font-serif tabular w-7 shrink-0 text-lg text-muted-foreground">{number}</span>
+                  <span className={`min-w-0 flex-1 truncate font-medium ${state === "done" ? "text-muted-foreground" : ""}`}>
+                    {game.config.title}
+                  </span>
+                  <GameStatus row={row} />
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="space-y-3 pb-5 pl-10">
+                  {game.config.prompt ? <p className="font-serif text-lg leading-snug">{game.config.prompt}</p> : null}
+                  {state === "done" ? (
+                    <DoneSummary row={row} />
+                  ) : (
+                    <GameForm
+                      eventId={eventId}
+                      slug={slug}
+                      game={game}
+                      teamId={teamId}
+                      entries={row.entries}
+                      photos={photos}
+                      maxFileSizeMb={maxFileSizeMb}
+                    />
+                  )}
                 </div>
-              ) : null}
-
-              {entries.some((entry) => entry.status === "rejected") ? (
-                <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                  <XCircle className="h-4 w-4 shrink-0" />
-                  Ведущий не засчитал результат
-                </div>
-              ) : null}
-
-              {!teamId ? (
-                <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                  <Lock className="h-4 w-4 shrink-0" />
-                  Вступите в команду выше, чтобы играть
-                </div>
-              ) : definition.input === "host" ? (
-                <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Конкурс проходит в зале. Баллы за него начисляет ведущий.
-                </p>
-              ) : usedUp ? (
-                <p className="text-sm text-muted-foreground">
-                  {entries[0]?.content ? `Ваш ответ: «${entries[0].content}»` : "Команда уже участвовала."}
-                </p>
-              ) : (
-                <GameForm
-                  eventId={eventId}
-                  slug={slug}
-                  game={game}
-                  teamId={teamId}
-                  entries={entries}
-                  photos={photos}
-                  hasVoted={hasVoted}
-                  maxFileSizeMb={maxFileSizeMb}
-                />
-              )}
-            </CardContent>
-          </Card>
-        );
-      })}
+              </details>
+            </li>
+          );
+        })}
+      </ul>
     </section>
+  );
+}
+
+function DoneSummary({ row }: { row: GameRow }) {
+  const { game, entries, pendingCount, rejectedCount } = row;
+  const answer = entries[0]?.content;
+
+  if (game.definition.input === "vote") {
+    return <p className="text-sm text-muted-foreground">Ваш голос учтён.</p>;
+  }
+
+  return (
+    <div className="space-y-1 text-sm text-muted-foreground">
+      {answer ? <p>Ответ команды: «{answer}»</p> : <p>Команда уже участвовала.</p>}
+      {pendingCount > 0 ? <p>Ведущий проверит ответ и начислит баллы.</p> : null}
+      {rejectedCount > 0 && pendingCount === 0 ? <p>Ведущий не засчитал этот ответ.</p> : null}
+    </div>
+  );
+}
+
+function ChoiceOptions({ options }: { options: string[] }) {
+  return (
+    <div className="grid gap-2">
+      {options.map((option, index) => (
+        <label
+          key={`${index}-${option}`}
+          className="flex min-h-14 cursor-pointer touch-manipulation items-center gap-3 rounded-lg border bg-card px-4 py-2 text-base transition-colors active:bg-secondary has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
+        >
+          <input type="radio" name="optionIndex" value={index} required className="peer sr-only" />
+          <span
+            aria-hidden
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-input bg-card transition-colors peer-checked:border-accent peer-checked:bg-accent"
+          >
+            <span className="h-2 w-2 rounded-full bg-card" />
+          </span>
+          <span className="font-medium">{option}</span>
+        </label>
+      ))}
+    </div>
   );
 }
 
@@ -143,7 +238,6 @@ function GameForm({
   teamId,
   entries,
   photos,
-  hasVoted,
   maxFileSizeMb,
 }: {
   eventId: string;
@@ -152,7 +246,6 @@ function GameForm({
   teamId: string;
   entries: ContestEntry[];
   photos: VotablePhoto[];
-  hasVoted: boolean;
   maxFileSizeMb: number;
 }) {
   const { definition, config } = game;
@@ -162,9 +255,7 @@ function GameForm({
       <form action={submitGameEntryAction} className="space-y-3">
         <HiddenGameFields eventId={eventId} slug={slug} gameType={definition.type} />
         <Textarea name="content" required placeholder="Ответ команды" className="min-h-24" maxLength={800} />
-        <Button type="submit" className="h-12 w-full text-base">
-          Отправить ответ
-        </Button>
+        <SubmitButton className="h-12 w-full text-base">Отправить ответ</SubmitButton>
       </form>
     );
   }
@@ -173,23 +264,8 @@ function GameForm({
     return (
       <form action={submitGameEntryAction} className="space-y-3">
         <HiddenGameFields eventId={eventId} slug={slug} gameType={definition.type} />
-        <div className="grid gap-2">
-          {config.options.map((option, index) => (
-            <label
-              key={option}
-              className="flex min-h-14 cursor-pointer touch-manipulation items-center gap-3 rounded-lg border bg-card p-3 text-base transition-colors active:bg-secondary has-[:checked]:border-primary has-[:checked]:bg-secondary/60"
-            >
-              <input type="radio" name="optionIndex" value={index} required className="h-5 w-5 shrink-0" />
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-semibold">
-                {String.fromCharCode(65 + index)}
-              </span>
-              <span className="font-medium">{option}</span>
-            </label>
-          ))}
-        </div>
-        <Button type="submit" className="h-12 w-full text-base">
-          Ответить от команды
-        </Button>
+        <ChoiceOptions options={config.options} />
+        <SubmitButton className="h-12 w-full text-base">Ответить от команды</SubmitButton>
       </form>
     );
   }
@@ -205,52 +281,61 @@ function GameForm({
       <form action={submitGameEntryAction} className="space-y-3">
         <HiddenGameFields eventId={eventId} slug={slug} gameType={definition.type} />
         <input type="hidden" name="meta_task" value={task} />
-        <div className="flex items-start gap-3 rounded-lg border bg-secondary/40 p-4">
-          <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Задание команды</div>
-            <p className="mt-1 font-medium">{task}</p>
-          </div>
+        <div className="rounded-lg border bg-secondary/60 p-4">
+          <div className="eyebrow">Задание команды</div>
+          <p className="mt-1 font-serif text-lg leading-snug">{task}</p>
         </div>
-        <Textarea
-          name="content"
-          required
-          placeholder="Расскажите, как выполнили задание"
-          className="min-h-20"
-          maxLength={800}
-        />
-        <Button type="submit" className="h-12 w-full text-base">
-          Отправить на проверку
-        </Button>
+        <Textarea name="content" required placeholder="Расскажите, как выполнили задание" className="min-h-20" maxLength={800} />
+        <SubmitButton className="h-12 w-full text-base">Отправить на проверку</SubmitButton>
       </form>
     );
   }
 
   if (definition.input === "bingo") {
-    const markedCells = new Set(
-      entries.map((entry) => String((entry.metadata as Record<string, unknown>).cell ?? "")),
-    );
+    const cellStatus = new Map<string, ContestEntry["status"]>();
+    for (const entry of entries) {
+      const cell = String((entry.metadata as Record<string, unknown>).cell ?? "");
+      if (cell) cellStatus.set(cell, entry.status);
+    }
 
     return (
       <div className="grid gap-2 sm:grid-cols-2">
         {config.options.map((cell) => {
-          const done = markedCells.has(cell);
+          const status = cellStatus.get(cell);
+          const done = status !== undefined;
+
+          if (done) {
+            return (
+              <div
+                key={cell}
+                className={`flex min-h-14 items-center gap-3 rounded-lg border px-4 py-2 text-sm ${
+                  status === "rejected"
+                    ? "border-destructive/30 text-muted-foreground line-through"
+                    : status === "pending"
+                      ? "border-warning/30 bg-warning-soft"
+                      : "border-accent/40 bg-accent-soft"
+                }`}
+              >
+                <Check className={`h-4 w-4 shrink-0 ${status === "pending" ? "text-warning" : "text-accent"}`} />
+                <span className="flex-1">{cell}</span>
+                {status === "pending" ? <span className="text-xs text-warning">На проверке</span> : null}
+              </div>
+            );
+          }
 
           return (
             <form action={submitGameEntryAction} key={cell}>
               <HiddenGameFields eventId={eventId} slug={slug} gameType={definition.type} />
               <input type="hidden" name="meta_cell" value={cell} />
               <input type="hidden" name="content" value={cell} />
-              <button
-                type="submit"
-                disabled={done}
-                className={`flex min-h-16 w-full touch-manipulation items-center gap-2 rounded-lg border p-3 text-left text-sm transition-colors active:bg-secondary disabled:opacity-100 ${
-                  done ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "bg-card"
-                }`}
+              <SubmitButton
+                variant="outline"
+                pendingText="Отмечаем…"
+                className="h-auto min-h-14 w-full justify-start whitespace-normal px-4 py-2 text-left text-sm font-normal"
               >
-                {done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : null}
-                <span>{cell}</span>
-              </button>
+                <span className="h-4 w-4 shrink-0 rounded-full border border-input" aria-hidden />
+                {cell}
+              </SubmitButton>
             </form>
           );
         })}
@@ -263,42 +348,11 @@ function GameForm({
   }
 
   if (definition.input === "vote") {
-    if (hasVoted) {
-      return (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
-          <ThumbsUp className="h-4 w-4 shrink-0" />
-          Ваш голос учтён
-        </div>
-      );
-    }
-
     if (photos.length === 0) {
-      return <p className="text-sm text-muted-foreground">Фотографии появятся, когда гости их загрузят.</p>;
+      return <p className="text-sm text-muted-foreground">Снимки появятся, когда гости их загрузят, а организатор одобрит.</p>;
     }
 
-    return (
-      <div className="grid grid-cols-2 gap-3">
-        {photos.map((photo) => (
-          <form action={voteForPhotoAction} key={photo.id} className="overflow-hidden rounded-lg border bg-card">
-            <input type="hidden" name="eventId" value={eventId} />
-            <input type="hidden" name="slug" value={slug} />
-            <input type="hidden" name="uploadId" value={photo.id} />
-            <div className="relative aspect-square bg-muted">
-              {photo.signedUrl ? (
-                <Image src={photo.signedUrl} alt="" fill className="object-cover" sizes="50vw" />
-              ) : null}
-            </div>
-            <div className="space-y-2 p-2">
-              <p className="truncate text-xs text-muted-foreground">{photo.guestName}</p>
-              <Button type="submit" size="sm" variant="outline" className="w-full">
-                <ThumbsUp className="h-4 w-4" />
-                Голос
-              </Button>
-            </div>
-          </form>
-        ))}
-      </div>
-    );
+    return <ContestPhotoVote eventId={eventId} slug={slug} photos={photos} />;
   }
 
   return null;

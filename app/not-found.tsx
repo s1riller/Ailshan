@@ -1,28 +1,29 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { SearchX } from "lucide-react";
 
+import { Monogram } from "@/components/motion/monogram";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+export const metadata: Metadata = {
+  title: "Такой страницы нет",
+};
+
+/** Сюда чаще всего попадает гость со старым QR-кодом — без бренда и лишних кнопок */
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen-dvh items-center justify-center px-4 py-10">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <SearchX className="h-5 w-5 text-muted-foreground" />
-            Страница не найдена
-          </CardTitle>
-          <CardDescription>
-            Возможно, мероприятие завершено или ссылка устарела. Проверьте QR-код или спросите организатора.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild variant="outline" className="w-full">
+    <main className="flex min-h-screen-dvh items-center justify-center bg-background px-5 py-10 sm:px-6">
+      <section className="w-full max-w-md">
+        <Monogram size={40} />
+        <h1 className="mt-6 font-serif text-3xl font-medium sm:text-4xl">Такой страницы нет</h1>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+          Возможно, событие завершено или ссылка устарела. Проверьте QR-код или спросите организатора.
+        </p>
+        <div className="mt-8">
+          <Button asChild variant="link" className="h-11 px-0 sm:h-auto">
             <Link href="/">На главную</Link>
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </main>
   );
 }

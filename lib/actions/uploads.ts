@@ -6,27 +6,33 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { moderationSchema, uploadMetadataSchema } from "@/lib/validations/upload";
 
-export async function createUploadMetadataAction(input: unknown) {
+const RETRY_MESSAGE = "Не удалось сохранить снимок. Попробуйте отправить его ещё раз.";
+
+export type CreateUploadResult =
+  | { ok: true; slug: string; uploadId: string; status: "pending" | "approved" }
+  | { ok: false; error: string };
+
+export async function createUploadMetadataAction(input: unknown): Promise<CreateUploadResult> {
   const parsed = uploadMetadataSchema.safeParse(input);
 
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Проверьте данные" };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Проверьте данные и попробуйте ещё раз" };
   }
 
   const supabase = createAdminClient();
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id, slug, custom_slug, owner_id, is_active, auto_approve, max_file_size_mb, photo_limit")
+    .select("id, title, slug, custom_slug, owner_id, is_active, auto_approve, max_file_size_mb, photo_limit")
     .eq("id", parsed.data.eventId)
     .single();
 
   if (eventError || !event?.is_active) {
-    return { ok: false, error: "Мероприятие недоступно для загрузки" };
+    return { ok: false, error: "Приём фото для этого события приостановлен. Уточните у организаторов." };
   }
 
-  const maxBytes = (event.max_file_size_mb ?? 10) * 1024 * 1024;
-  if (parsed.data.fileSize > maxBytes) {
-    return { ok: false, error: `Фото должно быть до ${event.max_file_size_mb ?? 10} МБ` };
+  const maxMb = event.max_file_size_mb ?? 10;
+  if (parsed.data.fileSize > maxMb * 1024 * 1024) {
+    return { ok: false, error: `Снимок должен быть не больше ${maxMb} МБ` };
   }
 
   const { count: uploadCount } = await supabase
@@ -35,9 +41,10 @@ export async function createUploadMetadataAction(input: unknown) {
     .eq("event_id", parsed.data.eventId);
 
   if ((uploadCount ?? 0) >= (event.photo_limit ?? 200)) {
-    return { ok: false, error: "Лимит фото для мероприятия исчерпан" };
+    return { ok: false, error: "Место для снимков на этом событии закончилось. Сообщите организаторам." };
   }
 
+  const status = event.auto_approve ? "approved" : "pending";
   const { data: upload, error: uploadError } = await supabase
     .from("uploads")
     .insert({
@@ -47,13 +54,16 @@ export async function createUploadMetadataAction(input: unknown) {
       file_path: parsed.data.filePath,
       file_type: parsed.data.fileType,
       file_size: parsed.data.fileSize,
-      status: event.auto_approve ? "approved" : "pending",
+      status,
     })
     .select("id")
     .single();
 
-  if (uploadError) {
-    return { ok: false, error: uploadError.message };
+  if (uploadError || !upload) {
+    console.error("uploads.insert", uploadError);
+    // Файл уже лежит в хранилище — убираем, чтобы не копить сирот
+    await supabase.storage.from("event-photos").remove([parsed.data.filePath]);
+    return { ok: false, error: RETRY_MESSAGE };
   }
 
   const { error: consentError } = await supabase.from("consents").insert({
@@ -62,19 +72,27 @@ export async function createUploadMetadataAction(input: unknown) {
   });
 
   if (consentError) {
-    return { ok: false, error: consentError.message };
+    console.error("consents.insert", consentError);
+    await supabase.from("uploads").delete().eq("id", upload.id);
+    await supabase.storage.from("event-photos").remove([parsed.data.filePath]);
+    return { ok: false, error: RETRY_MESSAGE };
   }
 
+  const publicSlug = event.custom_slug || event.slug;
   revalidatePath(`/dashboard/events/${parsed.data.eventId}`);
-  revalidatePath(`/live/${event.custom_slug || event.slug}`);
+  revalidatePath(`/live/${publicSlug}`);
 
-  await supabase.from("notifications").insert({
+  const { error: notificationError } = await supabase.from("notifications").insert({
     user_id: event.owner_id,
-    title: event.auto_approve ? "Новое фото опубликовано" : "Новое фото ждет модерации",
-    body: `${parsed.data.guestName} загрузил(а) фото к мероприятию.`,
+    title: event.auto_approve ? "Новое фото на экране" : "Новое фото ждёт проверки",
+    body: `Гость ${parsed.data.guestName} добавил фото: «${event.title}».`,
   });
 
-  return { ok: true, slug: event.custom_slug || event.slug };
+  if (notificationError) {
+    console.error("notifications.insert", notificationError);
+  }
+
+  return { ok: true, slug: publicSlug, uploadId: upload.id, status };
 }
 
 export async function moderateUploadAction(formData: FormData) {
@@ -94,12 +112,12 @@ export async function moderateUploadAction(formData: FormData) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    throw new Error("Нужно войти");
+    throw new Error("Сессия истекла. Войдите снова.");
   }
 
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id, slug")
+    .select("id, slug, custom_slug")
     .eq("id", parsed.data.eventId)
     .eq("owner_id", user.id)
     .single();
@@ -115,7 +133,8 @@ export async function moderateUploadAction(formData: FormData) {
     .eq("event_id", parsed.data.eventId);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("uploads.update", error);
+    throw new Error("Не удалось изменить статус снимка. Попробуйте ещё раз.");
   }
 
   await supabase.from("moderation_logs").insert({
@@ -126,7 +145,7 @@ export async function moderateUploadAction(formData: FormData) {
   });
 
   revalidatePath(`/dashboard/events/${parsed.data.eventId}`);
-  revalidatePath(`/live/${event.slug}`);
+  revalidatePath(`/live/${event.custom_slug || event.slug}`);
 }
 
 export async function bulkModerateUploadsAction(formData: FormData) {
@@ -135,7 +154,7 @@ export async function bulkModerateUploadsAction(formData: FormData) {
   const uploadIds = formData.getAll("uploadIds").map(String).filter(Boolean);
 
   if (!eventId || !["approved", "rejected"].includes(status) || uploadIds.length === 0) {
-    throw new Error("Выберите фото для массовой модерации");
+    throw new Error("Отметьте снимки, к которым применить действие");
   }
 
   const supabase = await createClient();
@@ -144,12 +163,12 @@ export async function bulkModerateUploadsAction(formData: FormData) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    throw new Error("Нужно войти");
+    throw new Error("Сессия истекла. Войдите снова.");
   }
 
   const { data: event } = await supabase
     .from("events")
-    .select("id, slug")
+    .select("id, slug, custom_slug")
     .eq("id", eventId)
     .eq("owner_id", user.id)
     .single();
@@ -165,7 +184,8 @@ export async function bulkModerateUploadsAction(formData: FormData) {
     .in("id", uploadIds);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("uploads.bulkUpdate", error);
+    throw new Error("Не удалось изменить статус снимков. Попробуйте ещё раз.");
   }
 
   await supabase.from("moderation_logs").insert(
@@ -178,5 +198,5 @@ export async function bulkModerateUploadsAction(formData: FormData) {
   );
 
   revalidatePath(`/dashboard/events/${eventId}`);
-  revalidatePath(`/live/${event.slug}`);
+  revalidatePath(`/live/${event.custom_slug || event.slug}`);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Camera, ImagePlus, Loader2, RotateCcw, Send } from "lucide-react";
+import { Camera, ImagePlus, Loader2, RotateCcw } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -14,8 +14,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createUploadMetadataAction } from "@/lib/actions/uploads";
-import { createClient } from "@/lib/supabase/client";
+import { readGuestName, rememberGuestName, rememberUpload } from "@/lib/guest-client";
+import { prepareImage, uploadWithProgress } from "@/lib/image-compress";
 import { uploadMetadataSchema } from "@/lib/validations/upload";
+import { cn } from "@/lib/utils";
 
 const formSchema = uploadMetadataSchema
   .pick({
@@ -23,10 +25,25 @@ const formSchema = uploadMetadataSchema
     message: true,
   })
   .extend({
-    acceptedPrivacy: z.boolean().refine((value) => value, "Нужно согласие перед отправкой"),
+    acceptedPrivacy: z.boolean().refine((value) => value, "Подтвердите согласие перед отправкой"),
   });
 
 type FormInput = z.infer<typeof formSchema>;
+
+/** Что сейчас происходит со снимком: от выбора до перехода на страницу «Спасибо» */
+type Phase = "idle" | "preparing" | "uploading" | "saving" | "done";
+
+const PHASE_TEXT: Record<Exclude<Phase, "idle">, string> = {
+  preparing: "Готовим снимок…",
+  uploading: "Отправляем снимок…",
+  saving: "Сохраняем…",
+  done: "Готово",
+};
+
+function formatMegabytes(bytes: number) {
+  const mb = bytes / 1048576;
+  return `${(mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)).replace(".", ",")} МБ`;
+}
 
 export function GuestUploadForm({
   eventId,
@@ -41,9 +58,11 @@ export function GuestUploadForm({
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const previewObjectUrlRef = useRef<string | null>(null);
+  const submittingRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState(0);
   const form = useForm<FormInput>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -53,6 +72,16 @@ export function GuestUploadForm({
     },
   });
 
+  const busy = phase !== "idle";
+
+  // Имя из прошлой отправки: гость с пятью снимками не вводит его пять раз
+  useEffect(() => {
+    const remembered = readGuestName();
+    if (remembered && !form.getValues("guestName")) {
+      form.setValue("guestName", remembered);
+    }
+  }, [form]);
+
   useEffect(() => {
     return () => {
       if (previewObjectUrlRef.current) {
@@ -61,133 +90,208 @@ export function GuestUploadForm({
     };
   }, []);
 
-  function selectFile(nextFile?: File) {
-    if (!nextFile) return;
-
-    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(nextFile.type)) {
-      toast.error("Можно загрузить только фото JPG, PNG, WEBP или HEIC");
-      return;
-    }
-
-    if (nextFile.size > maxFileSizeMb * 1024 * 1024) {
-      toast.error(`Фото должно быть до ${maxFileSizeMb} МБ`);
-      return;
-    }
-
+  function replacePreview(url: string | null) {
     if (previewObjectUrlRef.current) {
       URL.revokeObjectURL(previewObjectUrlRef.current);
     }
+    previewObjectUrlRef.current = url;
+    setPreviewUrl(url);
+  }
 
-    const objectUrl = URL.createObjectURL(nextFile);
-    previewObjectUrlRef.current = objectUrl;
-    setPreviewUrl(objectUrl);
-    setFile(nextFile);
+  async function selectFile(nextFile?: File) {
+    if (!nextFile || busy) return;
+
+    // На части Android тип у HEIC пустой — отдаём такие файлы prepareImage, он скажет точнее
+    if (nextFile.type && !nextFile.type.startsWith("image/")) {
+      toast.error("Это не фотография. Выберите снимок из галереи или сделайте новый.");
+      return;
+    }
+
+    setPhase("preparing");
+    const prepared = await prepareImage(nextFile);
+    setPhase("idle");
+
+    if ("error" in prepared) {
+      toast.error(prepared.error);
+      return;
+    }
+
+    if (prepared.file.size > maxFileSizeMb * 1024 * 1024) {
+      URL.revokeObjectURL(prepared.previewUrl);
+      toast.error(`Снимок получился больше ${maxFileSizeMb} МБ. Выберите другой.`);
+      return;
+    }
+
+    replacePreview(prepared.previewUrl);
+    setFile(prepared.file);
   }
 
   async function onSubmit(values: FormInput) {
     if (!file) {
-      toast.message("Сначала сделайте фото");
+      toast.message("Сначала выберите или сделайте снимок");
+      return;
+    }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "") ?? "";
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    const filePath = `events/${eventId}/${crypto.randomUUID()}.jpg`;
+
+    try {
+      setProgress(0);
+      setPhase("uploading");
+      await uploadWithProgress({
+        url: `${supabaseUrl}/storage/v1/object/event-photos/${filePath}`,
+        token: anonKey,
+        apikey: anonKey,
+        file,
+        onProgress: (fraction) => setProgress(Math.round(fraction * 100)),
+      });
+    } catch (error) {
+      console.error("storage.upload", error);
+      setPhase("idle");
+      submittingRef.current = false;
+      toast.error("Не удалось отправить снимок. Проверьте интернет и попробуйте ещё раз.", {
+        action: { label: "Повторить", onClick: () => void submitForm() },
+      });
       return;
     }
 
-    setLoading(true);
-    const supabase = createClient();
-    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const filePath = `events/${eventId}/${crypto.randomUUID()}.${extension}`;
+    setPhase("saving");
+    let result: Awaited<ReturnType<typeof createUploadMetadataAction>>;
+    try {
+      result = await createUploadMetadataAction({
+        eventId,
+        guestName: values.guestName,
+        message: values.message,
+        filePath,
+        fileType: file.type,
+        fileSize: file.size,
+        acceptedPrivacy: values.acceptedPrivacy,
+      });
+    } catch (error) {
+      console.error("createUploadMetadataAction", error);
+      result = { ok: false, error: "Не удалось сохранить снимок. Проверьте интернет и попробуйте ещё раз." };
+    }
 
-    const uploadResult = await supabase.storage.from("event-photos").upload(filePath, file, {
-      cacheControl: "3600",
-      contentType: file.type,
-      upsert: false,
-    });
-
-    if (uploadResult.error) {
-      setLoading(false);
-      toast.error(uploadResult.error.message);
+    if (!result.ok) {
+      setPhase("idle");
+      submittingRef.current = false;
+      toast.error(result.error);
       return;
     }
 
-    const metadataResult = await createUploadMetadataAction({
-      eventId,
-      guestName: values.guestName,
-      message: values.message,
-      filePath,
-      fileType: file.type,
-      fileSize: file.size,
-      acceptedPrivacy: values.acceptedPrivacy,
-    });
-
-    setLoading(false);
-
-    if (!metadataResult.ok) {
-      toast.error(metadataResult.error);
-      return;
-    }
-
+    rememberGuestName(values.guestName);
+    rememberUpload(eventId, result.uploadId);
+    setPhase("done");
     router.push(`/e/${slug}/thanks`);
     router.refresh();
   }
 
-  const submitHandler = form.handleSubmit(onSubmit);
+  function onInvalid(errors: Record<string, { message?: string } | undefined>) {
+    const first = Object.values(errors)[0];
+    if (first?.message) toast.error(String(first.message));
+  }
+
+  /* handleSubmit вызываем в обработчике, а не при рендере — иначе ref читается во время рендера */
+  function submitForm() {
+    return form.handleSubmit(onSubmit, onInvalid)();
+  }
 
   return (
     <Form {...form}>
-      <form onSubmit={submitHandler} className="space-y-5">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submitForm();
+        }}
+        className="space-y-5"
+      >
         <input
           ref={cameraInputRef}
           type="file"
           accept="image/*"
           capture="environment"
           className="hidden"
-          onChange={(event) => selectFile(event.target.files?.[0])}
+          onChange={(event) => {
+            void selectFile(event.target.files?.[0]);
+            event.target.value = "";
+          }}
         />
         <input
           ref={galleryInputRef}
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(event) => selectFile(event.target.files?.[0])}
+          onChange={(event) => {
+            void selectFile(event.target.files?.[0]);
+            event.target.value = "";
+          }}
         />
 
         <div className="space-y-3">
-          {previewUrl ? (
-            <div className="overflow-hidden rounded-lg border bg-card">
-              <div className="relative aspect-[4/3] bg-muted">
-                <Image src={previewUrl} alt="Выбранное фото" fill className="object-cover" sizes="100vw" />
-              </div>
-              <div className="flex items-center justify-between gap-3 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{file?.name}</p>
-                  <p className="text-xs text-muted-foreground">Фото готово к отправке</p>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}>
+          {/* Контейнер всегда 4:3 — превью не двигает поля вниз, когда появляется */}
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <div className="relative aspect-[4/3] bg-secondary">
+              {previewUrl ? (
+                <Image
+                  src={previewUrl}
+                  alt="Выбранный снимок"
+                  fill
+                  unoptimized
+                  className="object-contain"
+                  sizes="(max-width: 640px) 100vw, 512px"
+                />
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex h-full w-full flex-col items-center justify-center p-6 text-center transition-colors active:bg-muted disabled:opacity-60"
+                >
+                  {phase === "preparing" ? (
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  ) : (
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Camera className="h-7 w-7" />
+                    </span>
+                  )}
+                  <span className="mt-4 font-serif text-2xl font-medium">
+                    {phase === "preparing" ? "Готовим снимок" : "Сделать фото"}
+                  </span>
+                  <span className="mt-1 text-sm text-muted-foreground">
+                    {phase === "preparing" ? "Это займёт несколько секунд" : "Камера откроется сразу"}
+                  </span>
+                </button>
+              )}
+            </div>
+            {file ? (
+              <div className="flex items-center justify-between gap-3 border-t p-3">
+                <p className="text-sm text-muted-foreground">Снимок выбран · {formatMegabytes(file.size)}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="default"
+                  disabled={busy}
+                  onClick={() => cameraInputRef.current?.click()}
+                >
                   <RotateCcw className="h-4 w-4" />
                   Переснять
                 </Button>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              className="flex min-h-48 w-full flex-col items-center justify-center rounded-lg border border-dashed bg-card p-6 text-center transition-colors active:bg-secondary"
-            >
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg">
-                <Camera className="h-8 w-8" />
-              </span>
-              <span className="mt-4 text-lg font-semibold">Сделать фото</span>
-              <span className="mt-1 text-sm text-muted-foreground">Камера откроется сразу</span>
-            </button>
-          )}
+            ) : null}
+          </div>
 
           <Button
             type="button"
             variant="outline"
-            className="h-11 w-full"
+            className="w-full"
+            disabled={busy}
             onClick={() => galleryInputRef.current?.click()}
           >
             <ImagePlus className="h-4 w-4" />
-            Выбрать из галереи
+            {file ? "Выбрать другое фото" : "Выбрать из галереи"}
           </Button>
         </div>
 
@@ -198,7 +302,15 @@ export function GuestUploadForm({
             <FormItem>
               <FormLabel>Ваше имя</FormLabel>
               <FormControl>
-                <Input className="h-12 text-base" placeholder="Алина" autoComplete="name" {...field} />
+                <Input
+                  placeholder="Как вас зовут"
+                  autoComplete="name"
+                  disabled={busy}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.preventDefault();
+                  }}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -212,7 +324,7 @@ export function GuestUploadForm({
             <FormItem>
               <FormLabel>Пожелание</FormLabel>
               <FormControl>
-                <Textarea className="min-h-24 text-base" placeholder="Напишите пару теплых слов" {...field} />
+                <Textarea placeholder="Несколько тёплых слов, если хочется" disabled={busy} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -224,25 +336,52 @@ export function GuestUploadForm({
           name="acceptedPrivacy"
           render={({ field }) => (
             <FormItem>
-              <label className="flex items-start gap-3 rounded-md border bg-card p-3 text-sm">
+              <label
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors",
+                  field.value ? "border-accent/40 bg-accent-soft/40" : "bg-card",
+                )}
+              >
                 <input
+                  ref={field.ref}
                   type="checkbox"
                   checked={field.value}
+                  disabled={busy}
                   onChange={(event) => field.onChange(event.target.checked)}
-                  className="mt-1 h-5 w-5 rounded border-input"
+                  onBlur={field.onBlur}
+                  className="mt-0.5 h-5 w-5 shrink-0 rounded border-input"
                 />
-                <span>Я понимаю, что материалы будут доступны организатору мероприятия.</span>
+                <span>Фотография будет видна организаторам и может появиться на экране в зале.</span>
               </label>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        {/* Кнопка всегда под рукой: липнет к низу экрана с учётом домашнего индикатора iPhone */}
-        <div className="sticky bottom-0 -mx-4 border-t bg-card/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
-          <Button disabled={loading} size="lg" className="h-14 w-full text-base" type="submit">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Отправить фото
+        {/*
+          Панель отправки — последний элемент карточки: липнет к низу экрана,
+          а под ней ничего не остаётся. Отступы компенсируют p-5 / sm:p-6 у CardContent.
+        */}
+        <div className="sticky bottom-0 -mx-5 rounded-b-xl border-t bg-card/95 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+          {busy && phase !== "preparing" ? (
+            <div className="mb-3" role="status" aria-live="polite">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{PHASE_TEXT[phase]}</span>
+                <span className="tabular text-muted-foreground">
+                  {phase === "uploading" ? `${progress} %` : phase === "done" ? "100 %" : null}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-300"
+                  style={{ width: `${phase === "uploading" ? progress : 100}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+          <Button disabled={busy} size="lg" className="w-full" type="submit" aria-busy={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {busy && phase !== "preparing" ? PHASE_TEXT[phase] : "Отправить снимок"}
           </Button>
         </div>
       </form>

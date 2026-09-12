@@ -12,13 +12,22 @@ import { slugify } from "@/lib/utils";
 export async function createEventAction(formData: FormData) {
   const { user, profile } = await requireActiveProfile();
   const supabase = await createClient();
-  const { count } = await supabase
+  const { count, error: countError } = await supabase
     .from("events")
     .select("*", { count: "exact", head: true })
     .eq("owner_id", user.id);
 
-  if ((count ?? 0) >= (profile.events_limit ?? 3)) {
-    throw new Error(`Лимит мероприятий: ${profile.events_limit ?? 3}`);
+  // Без этой проверки сбой запроса читался бы как «0 событий» и лимит не работал бы
+  if (countError) {
+    console.error("[events] count failed", countError);
+    throw new Error("Не удалось проверить количество событий. Попробуйте ещё раз.");
+  }
+
+  const eventsLimit = profile.events_limit ?? 3;
+  if ((count ?? 0) >= eventsLimit) {
+    throw new Error(
+      `На вашем тарифе доступно не больше ${eventsLimit} событий. Удалите завершённое или перейдите на Премиум.`,
+    );
   }
 
   const parsed = eventSchema.safeParse({
@@ -48,7 +57,8 @@ export async function createEventAction(formData: FormData) {
     .single();
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[events] create failed", error);
+    throw new Error("Не удалось создать событие. Попробуйте ещё раз.");
   }
 
   await supabase.from("event_zones").insert({
@@ -93,7 +103,7 @@ export async function updateEventSettingsAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Проверьте настройки мероприятия");
+    throw new Error(parsed.error.issues[0]?.message ?? "Проверьте настройки события");
   }
 
   const { data: event, error: eventError } = await supabase
@@ -104,7 +114,7 @@ export async function updateEventSettingsAction(formData: FormData) {
     .single();
 
   if (eventError || !event) {
-    throw new Error("Мероприятие не найдено");
+    throw new Error("Событие не найдено");
   }
 
   const { error } = await supabase
@@ -131,7 +141,7 @@ export async function updateEventSettingsAction(formData: FormData) {
       brand_name: pro ? parsed.data.brandName || null : null,
       brand_color: pro ? parsed.data.brandColor || null : null,
       cover_title: pro ? parsed.data.coverTitle || null : null,
-      guest_instruction: parsed.data.guestInstruction || "Загрузите фото и пожелание по ссылке мероприятия.",
+      guest_instruction: parsed.data.guestInstruction || "Загрузите фото и пожелание по ссылке события.",
       archive_enabled: pro ? parsed.data.archiveEnabled : false,
       photo_limit: pro ? PRO_PHOTO_LIMIT : FREE_PHOTO_LIMIT,
     })
@@ -139,7 +149,8 @@ export async function updateEventSettingsAction(formData: FormData) {
     .eq("owner_id", user.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[events] update settings failed", error);
+    throw new Error("Не удалось сохранить настройки. Попробуйте ещё раз.");
   }
 
   revalidatePath("/dashboard");

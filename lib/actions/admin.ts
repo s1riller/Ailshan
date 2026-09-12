@@ -30,11 +30,12 @@ export async function createApplicationAction(formData: FormData) {
   });
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] application create failed", error);
+    throw new Error("Не удалось отправить заявку. Попробуйте ещё раз или напишите нам на почту.");
   }
 
   revalidatePath("/");
-  redirect("/?application=sent");
+  redirect("/?application=sent#application");
 }
 
 export async function updateApplicationStatusAction(formData: FormData) {
@@ -52,7 +53,8 @@ export async function updateApplicationStatusAction(formData: FormData) {
   const { error } = await admin.from("applications").update({ status: parsed.data.status }).eq("id", parsed.data.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] application status failed", error);
+    throw new Error("Не удалось обновить статус заявки. Попробуйте ещё раз.");
   }
 
   revalidatePath("/admin/applications");
@@ -67,7 +69,8 @@ export async function toggleUserBlockedAction(formData: FormData) {
   const { error } = await admin.from("profiles").update({ is_blocked: !isBlocked }).eq("id", id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] block toggle failed", error);
+    throw new Error("Не удалось изменить статус организатора. Попробуйте ещё раз.");
   }
 
   revalidatePath("/admin/users");
@@ -94,7 +97,8 @@ export async function updateUserPlanAction(formData: FormData) {
     .eq("id", id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] plan update failed", error);
+    throw new Error("Не удалось изменить тариф. Попробуйте ещё раз.");
   }
 
   revalidatePath("/admin/users");
@@ -109,7 +113,8 @@ export async function updateEventActiveAction(formData: FormData) {
   const { error } = await admin.from("events").update({ is_active: !isActive }).eq("id", id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] event toggle failed", error);
+    throw new Error("Не удалось изменить статус события. Попробуйте ещё раз.");
   }
 
   revalidatePath("/admin/events");
@@ -134,7 +139,8 @@ export async function moderateAnyUploadAction(formData: FormData) {
     .eq("id", parsed.data.uploadId);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] moderation failed", error);
+    throw new Error("Не удалось изменить статус фото. Попробуйте ещё раз.");
   }
 
   revalidatePath("/admin/uploads");
@@ -164,7 +170,8 @@ export async function createSupportTicketAction(formData: FormData) {
     .single();
 
   if (ticketError) {
-    throw new Error(ticketError.message);
+    console.error("[admin] ticket create failed", ticketError);
+    throw new Error("Не удалось отправить обращение. Попробуйте ещё раз.");
   }
 
   const { error } = await admin.from("support_messages").insert({
@@ -175,7 +182,8 @@ export async function createSupportTicketAction(formData: FormData) {
   });
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] ticket message failed", error);
+    throw new Error("Не удалось отправить обращение. Попробуйте ещё раз.");
   }
 
   revalidatePath("/dashboard/support");
@@ -201,7 +209,8 @@ export async function createSupportReplyAction(formData: FormData) {
   });
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] reply failed", error);
+    throw new Error("Не удалось отправить ответ. Попробуйте ещё раз.");
   }
 
   await admin.from("support_tickets").update({ status: "in_progress" }).eq("id", parsed.data.ticketId);
@@ -238,7 +247,8 @@ export async function updateTicketStatusAction(formData: FormData) {
   const { error } = await admin.from("support_tickets").update({ status: parsed.data.status }).eq("id", parsed.data.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[admin] ticket status failed", error);
+    throw new Error("Не удалось обновить статус обращения. Попробуйте ещё раз.");
   }
 
   revalidatePath("/admin/support");

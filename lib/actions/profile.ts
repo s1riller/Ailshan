@@ -36,7 +36,8 @@ export async function updateProfileAction(formData: FormData) {
     .eq("id", user.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[profile] update failed", error);
+    throw new Error("Не удалось сохранить профиль. Попробуйте ещё раз.");
   }
 
   revalidatePath("/dashboard/account");
@@ -71,7 +72,8 @@ export async function completeOnboardingAction(formData: FormData) {
     .eq("id", user.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[profile] onboarding failed", error);
+    throw new Error("Не удалось сохранить данные. Попробуйте ещё раз.");
   }
 
   redirect("/dashboard/events/new");
@@ -96,7 +98,8 @@ export async function updateAccountSettingsAction(formData: FormData) {
     .eq("id", user.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[profile] settings failed", error);
+    throw new Error("Не удалось сохранить настройки. Попробуйте ещё раз.");
   }
 
   revalidatePath("/dashboard/settings");
@@ -109,7 +112,8 @@ export async function markNotificationReadAction(formData: FormData) {
   const { error } = await admin.from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", user.id);
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[profile] notification read failed", error);
+    throw new Error("Не удалось отметить уведомление. Попробуйте ещё раз.");
   }
 
   revalidatePath("/dashboard/notifications");
@@ -146,7 +150,8 @@ export async function createUserSupportMessageAction(formData: FormData) {
   });
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[profile] support message failed", error);
+    throw new Error("Не удалось отправить сообщение. Попробуйте ещё раз.");
   }
 
   await admin.from("support_tickets").update({ status: "open" }).eq("id", parsed.data.ticketId);

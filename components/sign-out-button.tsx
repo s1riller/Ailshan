@@ -2,6 +2,7 @@
 
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -15,17 +16,31 @@ export function SignOutButton({
   labelClassName?: string;
 }) {
   const router = useRouter();
+  const [pending, setPending] = useState(false);
 
   async function signOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace("/");
-    router.refresh();
+    if (pending) return;
+    setPending(true);
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.replace("/");
+      router.refresh();
+    } catch (error) {
+      console.error("[sign-out] failed", error);
+      setPending(false);
+    }
   }
 
   return (
-    <Button variant="ghost" onClick={signOut} aria-label="Выйти" className={cn("px-3", className)}>
-      <LogOut className="h-4 w-4" />
+    <Button
+      variant="ghost"
+      onClick={signOut}
+      disabled={pending}
+      aria-label="Выйти"
+      className={cn("px-3", className)}
+    >
+      <LogOut className="h-5 w-5" />
       <span className={labelClassName}>Выйти</span>
     </Button>
   );

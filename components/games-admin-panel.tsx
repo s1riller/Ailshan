@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { Check, Pencil, Plus, RotateCcw, Trophy, X } from "lucide-react";
+import { Check, Pencil, Plus, RotateCcw, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   awardTeamPointsAction,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/actions/games";
 import { gameLabel, getGameDefinition } from "@/lib/games/catalog";
 import type { ContestGameConfig, ContestTeam } from "@/lib/games/contest";
+import { cn, plural } from "@/lib/utils";
 
 export type PendingEntry = {
   id: string;
@@ -52,160 +54,187 @@ type GamesAdminPanelProps = {
   hasQuiz: boolean;
 };
 
+/** Заголовок раздела: капитель, серифный заголовок, тонкая линия снизу */
+function SectionHeader({
+  eyebrow,
+  title,
+  description,
+  aside,
+}: {
+  eyebrow: string;
+  title: React.ReactNode;
+  description?: string;
+  aside?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-end justify-between gap-3 border-b pb-3">
+      <div className="min-w-0">
+        <div className="eyebrow">{eyebrow}</div>
+        <h2 className="mt-1 font-serif text-2xl font-medium leading-tight">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      {aside ? <div className="shrink-0">{aside}</div> : null}
+    </div>
+  );
+}
+
 export function GamesAdminPanel({ eventId, teams, games, pendingEntries, hasQuiz }: GamesAdminPanelProps) {
   const enabledCount = games.filter((game) => game.isEnabled).length;
   const totalPoints = teams.reduce((sum, team) => sum + team.total, 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       {!hasQuiz ? (
-        <Card className="border-amber-300 bg-amber-50/60">
-          <CardHeader>
-            <CardTitle className="text-base">Сначала создайте квиз</CardTitle>
-            <CardDescription>
-              Команды конкурса живут внутри квиза: гости вступают в них по коду, и именно командам
-              начисляются баллы за мини-игры. Создайте квиз выше — даже без вопросов он нужен как список команд.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <div className="rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm">
+          <p className="font-medium text-warning">Сначала создайте квиз</p>
+          <p className="mt-1 text-foreground">
+            Команды конкурса живут внутри квиза: гости вступают в них по коду, и именно командам начисляются баллы за
+            мини-игры. Квиз нужен даже без вопросов: он хранит команды.
+          </p>
+        </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-3">
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Игр открыто</div>
-            <div className="text-2xl font-semibold sm:text-3xl">
-              {enabledCount} <span className="text-base font-normal text-muted-foreground">из {games.length}</span>
+            <div className="eyebrow">Открыто</div>
+            <div className="mt-2 font-serif tabular text-3xl font-medium">
+              {enabledCount}
+              <span className="text-lg text-muted-foreground"> из {games.length}</span>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Команд</div>
-            <div className="text-2xl font-semibold sm:text-3xl">{teams.length}</div>
+            <div className="eyebrow">Команд</div>
+            <div className="mt-2 font-serif tabular text-3xl font-medium">{teams.length}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-muted-foreground">Баллов разыграно</div>
-            <div className="text-2xl font-semibold sm:text-3xl">{totalPoints}</div>
+            <div className="eyebrow">Баллов</div>
+            <div className="mt-2 font-serif tabular text-3xl font-medium">{totalPoints}</div>
           </CardContent>
         </Card>
       </div>
 
       {pendingEntries.length > 0 ? (
-        <Card className="border-primary/40">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Ждут подтверждения
-              <Badge>{pendingEntries.length}</Badge>
-            </CardTitle>
-            <CardDescription>Творческие задания начисляют баллы только после вашего подтверждения.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <section className="space-y-4">
+          <SectionHeader
+            eyebrow="Конкурс"
+            title={
+              <span className="inline-flex items-center gap-2">
+                Ждут подтверждения
+                <Badge variant="warning" className="font-sans">
+                  {pendingEntries.length}
+                </Badge>
+              </span>
+            }
+            description="Творческие задания начисляют баллы только после вашего подтверждения."
+          />
+          <div className="space-y-3">
             {pendingEntries.map((entry) => (
               <ModerationRow key={entry.id} eventId={eventId} entry={entry} />
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-amber-500" />
-            Таблица конкурса
-          </CardTitle>
-          <CardDescription>Сумма баллов за квиз, мини-игры и конкурсы в зале.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {teams.map((team, index) => (
-            <div key={team.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">{index + 1}</span>
-                  <span className="font-medium">{team.name}</span>
-                  {index === 0 && team.total > 0 ? <Trophy className="h-4 w-4 text-amber-500" /> : null}
+      <section className="space-y-4">
+        <SectionHeader
+          eyebrow="Конкурс"
+          title="Таблица команд"
+          description="Сумма баллов за квиз, мини-игры и конкурсы в зале."
+        />
+        {teams.length > 0 ? (
+          <div className="divide-y rounded-xl border bg-card">
+            {teams.map((team, index) => (
+              <div key={team.id} className="flex items-start justify-between gap-3 p-3 sm:items-center sm:px-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <span className="tabular w-5 text-sm text-muted-foreground">{index + 1}</span>
+                    <span className="font-serif text-lg font-medium leading-tight">{team.name}</span>
+                    {index === 0 && team.total > 0 ? (
+                      <Badge variant="accent" dot>
+                        Лидер
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="tabular mt-1 pl-8 text-xs text-muted-foreground">
+                    Квиз {team.quizPoints} · Игры {team.gamePoints + team.votePoints} · Зал {team.bonusPoints} ·{" "}
+                    {plural(team.members, "участник", "участника", "участников")} · код {team.joinCode}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Квиз {team.quizPoints} · Игры {team.gamePoints + team.votePoints} · Зал {team.bonusPoints} ·{" "}
-                  {team.members} участников · код {team.joinCode}
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="font-serif tabular text-2xl font-medium">{team.total}</span>
+                  <AwardPointsDialog eventId={eventId} team={team} />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge>{team.total}</Badge>
-                <AwardPointsDialog eventId={eventId} team={team} />
-              </div>
-            </div>
-          ))}
-          {teams.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Команды появятся, когда гости откроют ссылку конкурса и вступят в них.
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+            Команды появятся, когда гости откроют ссылку конкурса и вступят в них.
+          </p>
+        )}
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Мини-игры</CardTitle>
-          <CardDescription>
-            Включайте игры по ходу вечера — гости видят только открытые. Настройки можно менять на лету.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
+      <section className="space-y-4">
+        <SectionHeader
+          eyebrow="Конкурс"
+          title="Мини-игры"
+          description="Открывайте игры по ходу вечера — гости видят только открытые. Настройки можно менять на лету."
+        />
+        <div className="grid gap-3 md:grid-cols-2">
           {games.map((game) => (
             <GameConfigCard key={game.gameType} eventId={eventId} config={game} />
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Сброс результатов</CardTitle>
-          <CardDescription>
-            Удаляет все результаты мини-игр и голоса. Команды, вопросы и настройки игр останутся.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="ghost" className="w-full text-destructive hover:text-destructive sm:w-auto">
-                <RotateCcw className="h-4 w-4" />
-                Обнулить баллы мини-игр
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Обнулить результаты?</DialogTitle>
-                <DialogDescription>
-                  Все ответы в мини-играх и голоса за фото будут удалены без возможности восстановления.
-                  Баллы за квиз не затрагиваются.
-                </DialogDescription>
-              </DialogHeader>
-              <form action={resetContestScoresAction}>
-                <input type="hidden" name="eventId" value={eventId} />
-                <DialogFooter>
-                  <Button type="submit" variant="destructive">
-                    <RotateCcw className="h-4 w-4" />
-                    Обнулить
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </CardContent>
-      </Card>
+      <section className="space-y-4">
+        <SectionHeader
+          eyebrow="Служебное"
+          title="Сброс результатов"
+          description="Удаляет результаты мини-игр и голоса. Команды, вопросы и настройки игр останутся."
+        />
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="destructive" className="w-full sm:w-auto">
+              <RotateCcw className="h-4 w-4" />
+              Обнулить баллы мини-игр
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Обнулить результаты?</DialogTitle>
+              <DialogDescription>
+                Ответы в мини-играх и голоса за фото будут удалены без возможности восстановления. Баллы за квиз
+                останутся.
+              </DialogDescription>
+            </DialogHeader>
+            <form action={resetContestScoresAction}>
+              <input type="hidden" name="eventId" value={eventId} />
+              <DialogFooter>
+                <SubmitButton variant="destructive" pendingText="Обнуляем…">
+                  <RotateCcw className="h-4 w-4" />
+                  Обнулить
+                </SubmitButton>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </section>
     </div>
   );
 }
 
 function ModerationRow({ eventId, entry }: { eventId: string; entry: PendingEntry }) {
   return (
-    <article className="rounded-lg border bg-card p-3">
+    <article className="rounded-xl border bg-card p-3 sm:p-4">
       <div className="flex gap-3">
         {entry.photoUrl ? (
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border bg-muted">
+          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border bg-secondary">
             <Image src={entry.photoUrl} alt="" fill className="object-cover" sizes="80px" />
           </div>
         ) : null}
@@ -215,31 +244,33 @@ function ModerationRow({ eventId, entry }: { eventId: string; entry: PendingEntr
             <span className="text-sm font-medium">{entry.teamName}</span>
             <span className="text-xs text-muted-foreground">{entry.guestName}</span>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">{entry.content}</p>
+          {entry.content ? <p className="mt-2 font-serif text-base leading-snug">{entry.content}</p> : null}
         </div>
       </div>
-      <div className="mt-3 grid gap-2 sm:flex sm:items-end">
+      <div className="mt-3 grid gap-2 border-t pt-3 sm:flex sm:items-end">
         <form action={moderateGameEntryAction} className="flex flex-1 items-end gap-2">
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="entryId" value={entry.id} />
           <input type="hidden" name="status" value="approved" />
           <div className="w-24 space-y-1">
-            <Label className="text-xs">Баллы</Label>
-            <Input name="score" type="number" min="0" max="1000" defaultValue={entry.score} />
+            <Label htmlFor={`score-${entry.id}`} className="text-xs">
+              Баллы
+            </Label>
+            <Input id={`score-${entry.id}`} name="score" type="number" min="0" max="1000" defaultValue={entry.score} />
           </div>
-          <Button type="submit" className="flex-1 sm:flex-none">
+          <SubmitButton pendingText="Засчитываем…" className="flex-1 sm:flex-none">
             <Check className="h-4 w-4" />
             Засчитать
-          </Button>
+          </SubmitButton>
         </form>
         <form action={moderateGameEntryAction}>
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="entryId" value={entry.id} />
           <input type="hidden" name="status" value="rejected" />
-          <Button type="submit" variant="outline" className="w-full sm:w-auto">
+          <SubmitButton variant="outline" pendingText="Отклоняем…" className="w-full sm:w-auto">
             <X className="h-4 w-4" />
             Отклонить
-          </Button>
+          </SubmitButton>
         </form>
       </div>
     </article>
@@ -272,7 +303,7 @@ function AwardPointsDialog({ eventId, team }: { eventId: string; team: ContestTe
             <Input id={`reason-${team.id}`} name="reason" placeholder="Победа в конкурсе с шарами" maxLength={200} />
           </div>
           <DialogFooter>
-            <Button type="submit">Начислить</Button>
+            <SubmitButton pendingText="Начисляем…">Начислить</SubmitButton>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -291,26 +322,34 @@ function GameConfigCard({ eventId, config }: { eventId: string; config: ContestG
   const needsMoreOptions = definition.needsOptions && config.options.length < 2;
 
   return (
-    <div className={`rounded-lg border p-4 ${config.isEnabled ? "border-primary bg-secondary/30" : "bg-card"}`}>
+    <div className={cn("flex flex-col rounded-xl border bg-card p-4", config.isEnabled && "border-accent")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Icon className="h-4 w-4 shrink-0 text-primary" />
-            <span className="font-medium">{config.title}</span>
+            <Icon className={cn("h-4 w-4 shrink-0", config.isEnabled ? "text-accent" : "text-muted-foreground")} />
+            <span className="font-serif text-lg font-medium leading-tight">{config.title}</span>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{definition.description}</p>
         </div>
-        <Badge variant="secondary" className="shrink-0">
-          {config.points} б.
+        <Badge variant="secondary" className="tabular shrink-0">
+          {plural(config.points, "балл", "балла", "баллов")}
         </Badge>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {config.requiresApproval ? <Badge variant="outline">С подтверждением</Badge> : <Badge variant="outline">Автобаллы</Badge>}
-        {needsMoreOptions ? <Badge variant="destructive">Нужны варианты</Badge> : null}
+        {config.requiresApproval ? (
+          <Badge variant="outline">С подтверждением</Badge>
+        ) : (
+          <Badge variant="outline">Баллы сразу</Badge>
+        )}
+        {needsMoreOptions ? (
+          <Badge variant="warning" dot>
+            Нужны варианты
+          </Badge>
+        ) : null}
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t pt-3">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm">
@@ -346,7 +385,7 @@ function GameConfigCard({ eventId, config }: { eventId: string; config: ContestG
               {definition.needsOptions ? (
                 <div className="space-y-2">
                   <Label>{definition.optionsLabel ?? "Варианты"}</Label>
-                  <p className="text-xs text-muted-foreground">Пустые строки не сохраняются. Максимум 12.</p>
+                  <p className="text-xs text-muted-foreground">Пустые строки не сохраняются. Не больше 12.</p>
                   {Array.from({ length: Math.min(12, Math.max(4, config.options.length + 1)) }).map((_, index) => (
                     <Input
                       key={index}
@@ -366,18 +405,16 @@ function GameConfigCard({ eventId, config }: { eventId: string; config: ContestG
                     id={`correct-${definition.type}`}
                     name="correctOption"
                     defaultValue={config.correctOption ?? 0}
-                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:h-10"
+                    className="flex h-11 w-full rounded-md border border-input bg-card px-3 py-2 text-base sm:h-10 sm:text-sm"
                   >
                     {/* Только уже сохранённые варианты: иначе можно выбрать несуществующий и не сохранить игру */}
                     {config.options.map((option, index) => (
-                      <option key={option} value={index}>
+                      <option key={`${index}-${option}`} value={index}>
                         Вариант {index + 1} — {option}
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-muted-foreground">
-                    Новые варианты появятся в этом списке после сохранения.
-                  </p>
+                  <p className="text-xs text-muted-foreground">Новые варианты появятся в этом списке после сохранения.</p>
                 </div>
               ) : (
                 <input type="hidden" name="correctOption" value="" />
@@ -396,12 +433,12 @@ function GameConfigCard({ eventId, config }: { eventId: string; config: ContestG
                 />
               </div>
 
-              <label className="flex items-start gap-3 rounded-md border bg-card p-3 text-sm">
+              <label className="flex items-start gap-3 rounded-lg border bg-card p-3 text-sm">
                 <input
                   type="checkbox"
                   name="requiresApproval"
                   defaultChecked={config.requiresApproval}
-                  className="mt-1 h-5 w-5"
+                  className="mt-0.5 h-5 w-5 rounded border-input"
                 />
                 <span>
                   <span className="block font-medium">Подтверждать вручную</span>
@@ -409,8 +446,13 @@ function GameConfigCard({ eventId, config }: { eventId: string; config: ContestG
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 rounded-md border bg-card p-3 text-sm">
-                <input type="checkbox" name="isEnabled" defaultChecked={config.isEnabled} className="mt-1 h-5 w-5" />
+              <label className="flex items-start gap-3 rounded-lg border bg-card p-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="isEnabled"
+                  defaultChecked={config.isEnabled}
+                  className="mt-0.5 h-5 w-5 rounded border-input"
+                />
                 <span>
                   <span className="block font-medium">Игра открыта гостям</span>
                   <span className="text-muted-foreground">Появится на странице конкурса сразу после сохранения.</span>
@@ -418,25 +460,32 @@ function GameConfigCard({ eventId, config }: { eventId: string; config: ContestG
               </label>
 
               <DialogFooter>
-                <Button type="submit">Сохранить</Button>
+                <SubmitButton pendingText="Сохраняем…">Сохранить</SubmitButton>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
+        {/* Переключатель «открыта / закрыта»: точка шалфея означает, что игру видят гости */}
         <form action={toggleGameAction}>
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="gameType" value={definition.type} />
           <input type="hidden" name="isEnabled" value={config.isEnabled ? "false" : "true"} />
-          <Button
-            type="submit"
+          <SubmitButton
             size="sm"
-            variant={config.isEnabled ? "secondary" : "default"}
-            className="w-full"
+            variant="outline"
+            pendingText={config.isEnabled ? "Закрываем…" : "Открываем…"}
+            aria-pressed={config.isEnabled}
+            title={config.isEnabled ? "Закрыть игру для гостей" : "Открыть игру гостям"}
+            className={cn("w-full", config.isEnabled && "border-accent bg-accent-soft text-accent hover:bg-accent-soft")}
             disabled={needsMoreOptions && !config.isEnabled}
           >
-            {config.isEnabled ? "Закрыть" : "Открыть"}
-          </Button>
+            <span
+              aria-hidden
+              className={cn("h-2 w-2 shrink-0 rounded-full", config.isEnabled ? "bg-accent" : "bg-muted-foreground/40")}
+            />
+            {config.isEnabled ? "Открыта гостям" : "Закрыта"}
+          </SubmitButton>
         </form>
       </div>
     </div>

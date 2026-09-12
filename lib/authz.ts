@@ -28,9 +28,9 @@ export async function ensureProfile() {
     .maybeSingle();
 
   if (profileError) {
-    throw new Error(
-      `Не удалось загрузить профиль пользователя: ${profileError.message}. Примените миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push).`,
-    );
+    // Технические детали — только в лог: пользователь увидит нейтральный текст
+    console.error("[authz] profile load failed", profileError);
+    throw new Error("Не удалось загрузить профиль. Обновите страницу или напишите в поддержку.");
   }
 
   if (profile) {
@@ -47,7 +47,8 @@ export async function ensureProfile() {
     .single();
 
   if (error) {
-    throw new Error(error.message);
+    console.error("[authz] profile create failed", error);
+    throw new Error("Не удалось создать профиль. Обновите страницу или напишите в поддержку.");
   }
 
   return { user, profile: data };

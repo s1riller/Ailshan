@@ -17,20 +17,37 @@ import {
   toggleGameSchema,
 } from "@/lib/validations/games";
 
-const MIGRATION_HINT =
-  "База ещё не готова к конкурсу: примените миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push).";
+const GUEST_SAVE_ERROR = "Не удалось сохранить ответ. Попробуйте ещё раз.";
+const HOST_SAVE_ERROR = "Не удалось сохранить изменения. Попробуйте ещё раз.";
 
-function describeDbError(message: string) {
-  if (
+/**
+ * Текст ошибки базы никогда не показываем людям: гость за столом или ведущий
+ * не должны видеть «duplicate key» или совет применить миграции. Подробности —
+ * в лог, наружу — короткое сообщение о том, что делать дальше.
+ */
+function logDbError(scope: string, message: string) {
+  const schemaBroken =
     message.includes("event_games") ||
     message.includes("schema cache") ||
     message.includes("team_id") ||
-    message.includes("member_id")
-  ) {
-    return MIGRATION_HINT;
-  }
+    message.includes("member_id");
 
-  return `Не удалось сохранить результат: ${message}`;
+  console.error(
+    `[games] ${scope}: ${message}` +
+      (schemaBroken
+        ? " — похоже, не применены миграции из supabase/migrations (локально — npm run db:reset, в облаке — npm run db:push)"
+        : ""),
+  );
+}
+
+function guestDbError(scope: string, message: string) {
+  logDbError(scope, message);
+  return GUEST_SAVE_ERROR;
+}
+
+function hostDbError(scope: string, message: string) {
+  logDbError(scope, message);
+  return new Error(HOST_SAVE_ERROR);
 }
 
 function redirectGuestError(slug: string, message: string): never {
@@ -68,7 +85,7 @@ async function requireOwnedEvent(eventId: string) {
     .eq("owner_id", user.id)
     .single();
 
-  if (error || !event) throw new Error("Мероприятие не найдено");
+  if (error || !event) throw new Error("Событие не найдено");
 
   return { admin, event, slug: event.custom_slug || event.slug };
 }
@@ -99,18 +116,18 @@ export async function submitGameEntryAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirectGuestError(fallbackSlug, parsed.error.issues[0]?.message ?? "Проверьте ответ");
+    redirectGuestError(fallbackSlug, parsed.error.issues[0]?.message ?? "Проверьте ответ.");
   }
 
   const { eventId, slug, gameType, content, optionIndex, metadata } = parsed.data;
   const definition = getGameDefinition(gameType);
-  if (!definition) redirectGuestError(slug, "Неизвестная игра");
+  if (!definition) redirectGuestError(slug, "Такой игры нет в конкурсе.");
   // Баллы «Битвы команд» начисляет только ведущий — иначе их можно самоначислить подделанным запросом
-  if (definition.input === "host") redirectGuestError(slug, "Баллы за эту игру начисляет ведущий");
+  if (definition.input === "host") redirectGuestError(slug, "Баллы за эту игру начисляет ведущий.");
 
   const { teamId, memberId } = await readTeamSession(eventId);
   if (!teamId || !memberId) {
-    redirectGuestError(slug, "Сначала вступите в команду — баллы начисляются команде");
+    redirectGuestError(slug, "Сначала вступите в команду: баллы начисляются команде.");
   }
 
   const admin = createAdminClient();
@@ -120,9 +137,9 @@ export async function submitGameEntryAction(formData: FormData) {
     admin.from("quiz_team_members").select("id, guest_name").eq("id", memberId).eq("team_id", teamId).maybeSingle(),
   ]);
 
-  if (!event) redirectGuestError(slug, "Мероприятие уже завершено");
-  if (!membership) redirectGuestError(slug, "Команда не найдена. Войдите в команду заново");
-  if (!config?.is_enabled) redirectGuestError(slug, "Ведущий ещё не открыл эту игру");
+  if (!event) redirectGuestError(slug, "Событие уже завершено.");
+  if (!membership) redirectGuestError(slug, "Команда не найдена. Войдите в команду заново.");
+  if (!config?.is_enabled) redirectGuestError(slug, "Ведущий ещё не открыл эту игру.");
 
   // Одна попытка на команду — иначе баллы можно было бы накручивать повторами
   const { data: teamEntries, error: entriesError } = await admin
@@ -131,11 +148,11 @@ export async function submitGameEntryAction(formData: FormData) {
     .eq("event_id", eventId)
     .eq("team_id", teamId)
     .eq("game_type", gameType);
-  if (entriesError) redirectGuestError(slug, describeDbError(entriesError.message));
+  if (entriesError) redirectGuestError(slug, guestDbError("entries", entriesError.message));
   const existing = teamEntries ?? [];
 
   if (!definition.allowsMultipleEntries && existing.length > 0) {
-    redirectGuestError(slug, "Команда уже участвовала в этой игре");
+    redirectGuestError(slug, "Команда уже участвовала в этой игре.");
   }
 
   // Варианты хранятся в jsonb, поэтому приводим к массиву строк явно
@@ -146,28 +163,28 @@ export async function submitGameEntryAction(formData: FormData) {
   if (definition.input === "bingo") {
     const cell = String(metadata.cell ?? "");
     // Клетка не из карточки — подделанный запрос, иначе баллы копятся без предела
-    if (!options.includes(cell)) redirectGuestError(slug, "Такой клетки нет в карточке");
+    if (!options.includes(cell)) redirectGuestError(slug, "Такой клетки нет в карточке.");
     const alreadyMarked = existing.some(
       (row) => String((row.metadata as Record<string, unknown> | null)?.cell ?? "") === cell,
     );
-    if (alreadyMarked) redirectGuestError(slug, "Эта клетка уже отмечена вашей командой");
+    if (alreadyMarked) redirectGuestError(slug, "Эта клетка уже отмечена вашей командой.");
   }
 
   if (definition.input === "photo") {
     const filePath = String(metadata.filePath ?? "");
     if (!filePath.startsWith(`events/${eventId}/games/`)) {
-      redirectGuestError(slug, "Сначала загрузите фото");
+      redirectGuestError(slug, "Сначала добавьте снимок.");
     }
   }
 
   let answerText = content;
   if (definition.input === "choice") {
     if (optionIndex === null || optionIndex >= options.length) {
-      redirectGuestError(slug, "Выберите вариант ответа");
+      redirectGuestError(slug, "Выберите вариант ответа.");
     }
     answerText = options[optionIndex];
   } else if (!answerText) {
-    redirectGuestError(slug, "Заполните ответ");
+    redirectGuestError(slug, "Напишите ответ.");
   }
 
   const points = config.points ?? definition.defaultPoints;
@@ -192,8 +209,8 @@ export async function submitGameEntryAction(formData: FormData) {
     member_id: memberId,
   });
 
-  if (error?.code === "23505") redirectGuestError(slug, "Команда уже участвовала в этой игре");
-  if (error) redirectGuestError(slug, describeDbError(error.message));
+  if (error?.code === "23505") redirectGuestError(slug, "Команда уже участвовала в этой игре.");
+  if (error) redirectGuestError(slug, guestDbError("insert entry", error.message));
 
   revalidatePath(`/e/${slug}/play`);
   revalidatePath(`/live/${slug}`);
@@ -211,13 +228,13 @@ export async function voteForPhotoAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirectGuestError(fallbackSlug, parsed.error.issues[0]?.message ?? "Выберите фотографию");
+    redirectGuestError(fallbackSlug, parsed.error.issues[0]?.message ?? "Выберите снимок.");
   }
 
   const { eventId, slug, uploadId } = parsed.data;
   const { teamId, memberId } = await readTeamSession(eventId);
   if (!teamId || !memberId) {
-    redirectGuestError(slug, "Сначала вступите в команду — голос приносит баллы команде");
+    redirectGuestError(slug, "Сначала вступите в команду: голос приносит баллы команде.");
   }
 
   const admin = createAdminClient();
@@ -227,9 +244,9 @@ export async function voteForPhotoAction(formData: FormData) {
     admin.from("uploads").select("id").eq("id", uploadId).eq("event_id", eventId).eq("status", "approved").maybeSingle(),
   ]);
 
-  if (!event) redirectGuestError(slug, "Мероприятие уже завершено");
-  if (!config?.is_enabled) redirectGuestError(slug, "Голосование сейчас закрыто");
-  if (!upload) redirectGuestError(slug, "Фотография недоступна для голосования");
+  if (!event) redirectGuestError(slug, "Событие уже завершено.");
+  if (!config?.is_enabled) redirectGuestError(slug, "Голосование сейчас закрыто.");
+  if (!upload) redirectGuestError(slug, "Этот снимок недоступен для голосования.");
 
   const { data: membership } = await admin
     .from("quiz_team_members")
@@ -237,7 +254,7 @@ export async function voteForPhotoAction(formData: FormData) {
     .eq("id", memberId)
     .eq("team_id", teamId)
     .maybeSingle();
-  if (!membership) redirectGuestError(slug, "Команда не найдена. Войдите в команду заново");
+  if (!membership) redirectGuestError(slug, "Команда не найдена. Войдите в команду заново.");
 
   const { error } = await admin.from("photo_votes").insert({
     event_id: eventId,
@@ -247,8 +264,8 @@ export async function voteForPhotoAction(formData: FormData) {
     member_id: memberId,
   });
 
-  if (error?.code === "23505") redirectGuestError(slug, "Вы уже отдали свой голос");
-  if (error) redirectGuestError(slug, describeDbError(error.message));
+  if (error?.code === "23505") redirectGuestError(slug, "Вы уже отдали свой голос.");
+  if (error) redirectGuestError(slug, guestDbError("insert vote", error.message));
 
   revalidatePath(`/e/${slug}/play`);
   revalidatePath(`/live/${slug}`);
@@ -295,7 +312,7 @@ export async function saveGameConfigAction(formData: FormData) {
     { onConflict: "event_id,game_type" },
   );
 
-  if (error) throw new Error(describeDbError(error.message));
+  if (error) throw hostDbError("save config", error.message);
 
   revalidateContest(parsed.data.eventId, slug);
 }
@@ -340,7 +357,7 @@ export async function toggleGameAction(formData: FormData) {
         updated_at: new Date().toISOString(),
       });
 
-  if (error) throw new Error(describeDbError(error.message));
+  if (error) throw hostDbError("toggle game", error.message);
 
   revalidateContest(parsed.data.eventId, slug);
 }
@@ -366,7 +383,7 @@ export async function moderateGameEntryAction(formData: FormData) {
     .eq("id", parsed.data.entryId)
     .eq("event_id", parsed.data.eventId);
 
-  if (error) throw new Error(describeDbError(error.message));
+  if (error) throw hostDbError("moderate entry", error.message);
 
   revalidateContest(parsed.data.eventId, slug);
 }
@@ -390,7 +407,7 @@ export async function awardTeamPointsAction(formData: FormData) {
   const { data: team } = quiz
     ? await admin.from("quiz_teams").select("id, name").eq("id", parsed.data.teamId).eq("quiz_id", quiz.id).maybeSingle()
     : { data: null };
-  if (!team) throw new Error("Команда не найдена в этом мероприятии");
+  if (!team) throw new Error("Команда не найдена в этом событии");
 
   const { error } = await admin.from("game_entries").insert({
     event_id: parsed.data.eventId,
@@ -403,21 +420,21 @@ export async function awardTeamPointsAction(formData: FormData) {
     team_id: parsed.data.teamId,
   });
 
-  if (error) throw new Error(describeDbError(error.message));
+  if (error) throw hostDbError("award points", error.message);
 
   revalidateContest(parsed.data.eventId, slug);
 }
 
 export async function resetContestScoresAction(formData: FormData) {
   const eventId = String(formData.get("eventId") || "");
-  if (!eventId) throw new Error("Некорректное мероприятие");
+  if (!eventId) throw new Error("Некорректное событие");
 
   const { admin, slug } = await requireOwnedEvent(eventId);
   const { error: entriesError } = await admin.from("game_entries").delete().eq("event_id", eventId);
-  if (entriesError) throw new Error(describeDbError(entriesError.message));
+  if (entriesError) throw hostDbError("reset entries", entriesError.message);
 
   const { error: votesError } = await admin.from("photo_votes").delete().eq("event_id", eventId);
-  if (votesError) throw new Error(describeDbError(votesError.message));
+  if (votesError) throw hostDbError("reset votes", votesError.message);
 
   revalidateContest(eventId, slug);
 }
