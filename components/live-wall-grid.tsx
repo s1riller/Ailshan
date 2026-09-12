@@ -74,7 +74,7 @@ export function LiveWallGrid({
 /**
  * Главный кадр: свежий снимок крупно, рядом ещё четыре. На проекторе —
  * колонка справа; на широкой полосе кадр занимает столько, сколько позволяет
- * высота, а соседи встают квадратом 2×2, иначе они превращались бы в ленточки.
+ * высота, а соседи встают в ряд, иначе они превращались бы в ленточки.
  */
 export function LiveFeaturedGrid({
   photos,
@@ -90,15 +90,18 @@ export function LiveFeaturedGrid({
   const [hero, ...rest] = photos;
   const side = rest.slice(0, 4);
   const wideStage = area.width / area.height >= 1.9;
-  const heroWidth = Math.min(area.height * 1.4, area.width * 0.6);
-  const sideCols = wideStage ? Math.min(2, side.length) : 1;
-  const sideRows = Math.max(1, Math.ceil(side.length / sideCols));
+  const heroWidth = Math.round(Math.min(area.height * 1.4, area.width * 0.6));
+  // Соседи раскладываются тем же подбором, что и мозаика: под оставшуюся
+  // ширину — колонка на проекторе, ряд портретных плиток на полосе.
+  const sideWidth = wideStage ? area.width - heroWidth - 12 : area.width / 4;
+  const [sideCols, sideRows] = chooseGrid(side.length, sideWidth, area.height, { maxCols: 4, maxRows: 4 });
+  const sidePlan = planGrid(side.length, sideCols, sideRows);
 
   return (
     <section
       ref={ref}
       className={`${WALL_SECTION} grid gap-3`}
-      style={{ gridTemplateColumns: wideStage ? `${Math.round(heroWidth)}px minmax(0, 1fr)` : "3fr 1fr" }}
+      style={{ gridTemplateColumns: wideStage ? `${heroWidth}px minmax(0, 1fr)` : "3fr 1fr" }}
     >
       <article className="relative overflow-hidden rounded-xl border border-live-foreground/10 bg-live-foreground/5">
         <ContainedPhoto photo={hero} sizes={wideStage ? "60vw" : "75vw"} priority />
@@ -118,7 +121,8 @@ export function LiveFeaturedGrid({
             key={photo.id}
             photo={photo}
             index={position + 1}
-            sizes={wideStage ? "20vw" : "25vw"}
+            span={sidePlan.spans[position]}
+            sizes={`${Math.round(100 / (wideStage ? sideCols * 1.5 : 4))}vw`}
             priority
             showMessages={showMessages}
             showNames={showNames}
