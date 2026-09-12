@@ -475,12 +475,7 @@ function LiveBottomBar({
 }) {
   return (
     <footer className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--bar)] items-center justify-between gap-8 border-t border-live-foreground/10 bg-live/85 px-8 backdrop-blur">
-      <div className="flex min-w-0 items-center gap-6">
-        <span className="flex shrink-0 items-center gap-2.5 text-base font-medium uppercase tracking-[0.14em] text-live-muted">
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-live-accent" />В эфире
-        </span>
-        <h1 className="truncate font-serif text-3xl font-medium leading-none lg:text-4xl">{title}</h1>
-      </div>
+      <h1 className="min-w-0 truncate font-serif text-3xl font-medium leading-none lg:text-4xl">{title}</h1>
 
       {qrUrl ? (
         <div
@@ -928,7 +923,7 @@ export default async function LivePage({
     <main
       className={[
         "relative h-screen overflow-hidden bg-live text-live-foreground",
-        qrInBar ? "[--bar:8.5rem]" : "[--bar:5.5rem]",
+        showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:8.5rem]" : "[--bar:5.5rem]",
       ].join(" ")}
     >
       <LiveAutoRefresh />
@@ -1135,7 +1130,9 @@ export default async function LivePage({
         />
       ) : null}
 
-      <LiveBottomBar title={liveTitle} qrUrl={qrInBar ? publicUrl : null} qrEffect={qrEffect} qrInterval={qrInterval} />
+      {!showWelcome ? (
+        <LiveBottomBar title={liveTitle} qrUrl={qrInBar ? publicUrl : null} qrEffect={qrEffect} qrInterval={qrInterval} />
+      ) : null}
 
       {withPanel ? <LiveContestPanel teams={panelTeams} poll={poll} latest={latestEntries} /> : null}
 

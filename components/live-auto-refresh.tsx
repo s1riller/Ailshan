@@ -5,7 +5,7 @@ import { useEffect } from "react";
 
 /**
  * Экран зала обновляет данные сам, раз в 8 секунд. Ничего не рисует:
- * индикатор «В эфире» живёт в нижней полосе страницы.
+ * название события живёт в нижней полосе страницы.
  */
 export function LiveAutoRefresh({ intervalMs = 8000 }: { intervalMs?: number }) {
   const router = useRouter();
