@@ -4,6 +4,11 @@ import { useMemo, useState } from "react";
 
 import { PhotoLightbox, usePhotoLightbox, type LightboxPhoto } from "@/components/photo-lightbox";
 import { HaloReel, type HaloReelItem } from "@/components/ui/halo-reel";
+import { useElementSize } from "@/lib/use-element-size";
+
+/** Карточка на проекторе 16:9; на низких экранах уменьшается вместе с кольцом */
+const CARD_HEIGHT = 560;
+const CARD_RATIO = 0.75;
 
 export type ReelPhoto = {
   id: string;
@@ -20,6 +25,9 @@ export type ReelPhoto = {
  * бы с рывком. Поэтому список пересобирается только когда меняется набор id.
  * Подпись у переднего снимка обновляется по колбэку кольца, без ререндера
  * самой карусели. Клик по карточке открывает снимок на весь экран.
+ *
+ * Размер карточек и вертикальный радиус кольца считаются от высоты области:
+ * на LED-полосе 3:1 карточки под проектор не влезали бы по высоте и резались.
  */
 export function LiveHaloReel({
   photos,
@@ -74,16 +82,23 @@ function Reel({
   const [front, setFront] = useState<ReelPhoto | null>(photos[0] ?? null);
   const caption = front && (showNames || showMessages) ? front : null;
 
+  // Низкая область (полоса, а не проектор): кольцо площе, карточки — половина
+  // высоты, чтобы передняя целиком помещалась над нижней полосой.
+  const [ref, size] = useElementSize<HTMLDivElement>();
+  const short = size.height > 0 && size.height < 800;
+  const cardHeight = short ? Math.max(220, Math.round(size.height * 0.5)) : CARD_HEIGHT;
+  const cardWidth = Math.round(cardHeight * CARD_RATIO);
+
   return (
-    <div className="absolute inset-x-0 top-0 bottom-[var(--bar)] isolate z-0">
+    <div ref={ref} className="absolute inset-x-0 top-0 bottom-[var(--bar)] isolate z-0">
       <HaloReel
         items={items}
         aria-label="Снимки гостей"
-        cardWidth={420}
-        cardHeight={560}
+        cardWidth={cardWidth}
+        cardHeight={cardHeight}
         minScale={0.32}
         radiusXRatio={withPanel ? 0.3 : 0.42}
-        radiusYRatio={0.34}
+        radiusYRatio={short ? 0.24 : 0.34}
         centerXRatio={withPanel ? 0.3 : 0.02}
         spread={1.15}
         holdDuration={2600}
@@ -99,15 +114,15 @@ function Reel({
         className="h-full bg-transparent"
         centerLabel={
           <div className="max-w-[28vw] text-left">
-            <div className="text-lg font-medium uppercase tracking-[0.18em] text-live-muted">Снимки гостей</div>
-            <div className="mt-4 font-serif text-[4.2vw] font-medium leading-[1.02] text-live-foreground">{title}</div>
+            <div className="text-[calc(0.95*var(--u))] font-medium uppercase tracking-[0.18em] text-live-muted">Снимки гостей</div>
+            <div className="mt-4 font-serif text-[calc(4.2*var(--u))] font-medium leading-[1.02] text-live-foreground">{title}</div>
             {caption ? (
-              <div className="mt-10 border-t border-live-foreground/15 pt-6">
+              <div className="mt-[calc(2*var(--u))] border-t border-live-foreground/15 pt-[calc(1.2*var(--u))]">
                 {showNames && caption.guestName ? (
-                  <div className="text-base font-medium uppercase tracking-[0.18em] text-live-muted">{caption.guestName}</div>
+                  <div className="text-[calc(0.85*var(--u))] font-medium uppercase tracking-[0.18em] text-live-muted">{caption.guestName}</div>
                 ) : null}
                 {showMessages && caption.message ? (
-                  <p className="mt-2 font-serif text-[1.9vw] italic leading-snug text-live-foreground">{caption.message}</p>
+                  <p className="mt-2 line-clamp-3 font-serif text-[calc(1.9*var(--u))] italic leading-snug text-live-foreground">{caption.message}</p>
                 ) : null}
               </div>
             ) : null}

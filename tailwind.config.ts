@@ -10,6 +10,13 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Экран зала: проектор 16:9, LED-полоса 3:1 или вертикальная панель —
+      // раскладки стены переключаются по пропорции, а не по ширине.
+      screens: {
+        wide: { raw: "(min-aspect-ratio: 2/1)" },
+        ultra: { raw: "(min-aspect-ratio: 3/1)" },
+        tall: { raw: "(max-aspect-ratio: 1/1)" },
+      },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         serif: ["var(--font-serif)", "Times New Roman", "Georgia", "serif"],

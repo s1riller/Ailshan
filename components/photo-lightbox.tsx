@@ -167,7 +167,7 @@ export function PhotoLightbox({
               </div>
             ) : null}
             {current.message ? (
-              <p className={cn("mt-1 max-w-2xl font-serif text-xl italic leading-snug sm:text-2xl", wall && "max-w-4xl text-[2.4vw]")}>
+              <p className={cn("mt-1 max-w-2xl font-serif text-xl italic leading-snug sm:text-2xl", wall && "max-w-4xl text-[calc(2.4*var(--u))]")}>
                 {current.message}
               </p>
             ) : null}

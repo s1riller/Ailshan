@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { LiveAutoRefresh } from "@/components/live-auto-refresh";
 import { LiveHaloReel } from "@/components/live-halo-reel";
+import { ContainedPhoto, PhotoCaption, WALL_OVERLINE, type LivePhoto } from "@/components/live-photo-tiles";
+import { LiveFeaturedGrid, LiveWallGrid } from "@/components/live-wall-grid";
 import { LivePinnedPhoto } from "@/components/live-pinned-photo";
 import { LiveWelcome } from "@/components/live-welcome";
 import { PhotoLightbox, PhotoLightboxTrigger, type LightboxPhoto } from "@/components/photo-lightbox";
@@ -18,13 +19,6 @@ import { isGamePlayable, loadContest, type ContestTeam } from "@/lib/games/conte
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const revalidate = 5;
-
-type LivePhoto = {
-  id: string;
-  guest_name: string;
-  message: string | null;
-  signedUrl: string;
-};
 
 type LiveLayout = "masonry" | "featured" | "slideshow" | "compact" | "halo";
 type LiveTransition = "fade" | "slide" | "zoom" | "stories";
@@ -57,9 +51,6 @@ const FEW_PHOTOS_LIMIT = 2;
  */
 const HIDDEN_ON_WALL = new Set(["secret_mission", "time_capsule", "bingo", "photo_challenge", "team_battle", "poll"]);
 
-/** Капитель для стены: крупнее обычной, читается с десяти метров */
-const WALL_OVERLINE = "text-lg font-medium uppercase tracking-[0.18em] text-live-muted";
-
 const QR_HINT = "Наведите камеру, чтобы добавить снимок";
 
 function getSafeLayout(value: string | null | undefined): LiveLayout {
@@ -87,253 +78,11 @@ function getSafeQrInterval(value: number | null | undefined, fallback = 30) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Сетка, которая заполняет экран при любом количестве снимков          */
-/* ------------------------------------------------------------------ */
-
-type GridPlan = { cols: number; rows: number; spans: Record<number, string> };
-
-/**
- * Раздаёт растяжки так, чтобы в сетке cols×rows не осталось пустых
- * клеток: первый (самый свежий) снимок получает 2×2, дальше — по одной
- * двойной клетке на каждую недостающую. grid-auto-flow: dense заполняет
- * остальное.
- */
-function planGrid(count: number, cols: number, rows: number): GridPlan {
-  const spans: Record<number, string> = {};
-  let missing = cols * rows - count;
-  let index = 0;
-
-  if (missing >= 3 && rows >= 2 && cols >= 2) {
-    spans[0] = "col-span-2 row-span-2";
-    missing -= 3;
-    index = 1;
-  }
-
-  while (missing > 0 && index < count) {
-    spans[index] = "col-span-2";
-    missing -= 1;
-    index += 3;
-  }
-
-  return { cols, rows, spans };
-}
-
-function masonryTier(count: number): [cols: number, rows: number] {
-  if (count <= 3) return [3, 1];
-  if (count === 4) return [2, 2];
-  if (count <= 6) return [3, 2];
-  if (count <= 8) return [4, 2];
-  if (count <= 12) return [4, 3];
-
-  return [6, 3];
-}
-
-function compactTier(count: number): [cols: number, rows: number] {
-  if (count <= 4) return [count, 1];
-  if (count <= 8) return [4, 2];
-  if (count <= 12) return [4, 3];
-  if (count <= 18) return [6, 3];
-  if (count <= 24) return [6, 4];
-
-  return [8, 4];
-}
-
-/* ------------------------------------------------------------------ */
-/* Снимок и подпись                                                     */
-/* ------------------------------------------------------------------ */
-
-function PhotoCaption({
-  photo,
-  showMessages,
-  showNames,
-  size = "sm",
-}: {
-  photo: LivePhoto;
-  showMessages: boolean;
-  showNames: boolean;
-  size?: "sm" | "lg";
-}) {
-  const hasMessage = showMessages && Boolean(photo.message);
-  if (!showNames && !hasMessage) return null;
-
-  const large = size === "lg";
-
-  return (
-    <div className={["absolute inset-x-0 bottom-0 bg-live/80 backdrop-blur-sm", large ? "px-8 py-5" : "px-4 py-3"].join(" ")}>
-      {showNames ? (
-        <p
-          className={[
-            "truncate font-medium uppercase text-live-muted",
-            large ? "text-xl tracking-[0.18em]" : "text-base tracking-[0.14em]",
-          ].join(" ")}
-        >
-          {photo.guest_name}
-        </p>
-      ) : null}
-
-      {hasMessage ? (
-        <p
-          className={[
-            "font-serif italic leading-snug text-live-foreground",
-            large ? "mt-2 line-clamp-2 text-4xl" : "mt-1 line-clamp-2 text-2xl",
-          ].join(" ")}
-        >
-          {photo.message}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/** Снимок целиком на размытом отражении себя же: без чёрных полей и без обрезки */
-function ContainedPhoto({ photo, sizes, priority = false }: { photo: LivePhoto; sizes: string; priority?: boolean }) {
-  if (!photo.signedUrl) return null;
-
-  return (
-    <>
-      <Image
-        src={photo.signedUrl}
-        alt=""
-        aria-hidden
-        fill
-        className="scale-110 object-cover opacity-50 blur-2xl"
-        sizes="200px"
-      />
-      <Image src={photo.signedUrl} alt="" fill className="object-contain" sizes={sizes} priority={priority} />
-    </>
-  );
-}
-
-function PhotoTile({
-  photo,
-  index,
-  span,
-  sizes,
-  priority,
-  showMessages,
-  showNames,
-}: {
-  photo: LivePhoto;
-  /** Позиция в общем списке снимков стены — для открытия на весь экран */
-  index: number;
-  span?: string;
-  sizes: string;
-  priority: boolean;
-  showMessages: boolean;
-  showNames: boolean;
-}) {
-  return (
-    <article
-      className={["relative overflow-hidden rounded-xl border border-live-foreground/10 bg-live-foreground/5", span ?? ""].join(" ")}
-    >
-      {photo.signedUrl ? (
-        <Image src={photo.signedUrl} alt="" fill className="object-cover" sizes={sizes} priority={priority} />
-      ) : null}
-
-      <PhotoCaption photo={photo} showMessages={showMessages} showNames={showNames} />
-      <PhotoLightboxTrigger index={index} className="absolute inset-0 z-10 cursor-pointer" label="Открыть снимок на весь экран" />
-    </article>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Раскладки                                                            */
 /* ------------------------------------------------------------------ */
 
 /** Область стены над нижней полосой; высота полосы — переменная --bar на <main> */
 const WALL_SECTION = "absolute inset-x-0 top-0 bottom-[var(--bar)] p-6";
-
-function GridGallery({
-  photos,
-  plan,
-  showMessages,
-  showNames,
-}: {
-  photos: LivePhoto[];
-  plan: GridPlan;
-  showMessages: boolean;
-  showNames: boolean;
-}) {
-  const tileWidth = Math.round(100 / plan.cols);
-
-  return (
-    <section
-      className={`${WALL_SECTION} grid grid-flow-dense gap-3`}
-      style={{
-        gridTemplateColumns: `repeat(${plan.cols}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${plan.rows}, minmax(0, 1fr))`,
-      }}
-    >
-      {photos.map((photo, index) => {
-        const span = plan.spans[index];
-
-        return (
-          <PhotoTile
-            key={photo.id}
-            photo={photo}
-            index={index}
-            span={span}
-            sizes={span ? `${tileWidth * 2}vw` : `${tileWidth}vw`}
-            priority={index < 8}
-            showMessages={showMessages}
-            showNames={showNames}
-          />
-        );
-      })}
-    </section>
-  );
-}
-
-function MasonryGallery(props: { photos: LivePhoto[]; showMessages: boolean; showNames: boolean }) {
-  const photos = props.photos.slice(0, 18);
-  const [cols, rows] = masonryTier(photos.length);
-
-  return <GridGallery {...props} photos={photos} plan={planGrid(photos.length, cols, rows)} />;
-}
-
-function CompactGallery(props: { photos: LivePhoto[]; showMessages: boolean; showNames: boolean }) {
-  const photos = props.photos.slice(0, MAX_WALL_PHOTOS);
-  const [cols, rows] = compactTier(photos.length);
-
-  return <GridGallery {...props} photos={photos} plan={planGrid(photos.length, cols, rows)} />;
-}
-
-function FeaturedGallery({
-  photos,
-  showMessages,
-  showNames,
-}: {
-  photos: LivePhoto[];
-  showMessages: boolean;
-  showNames: boolean;
-}) {
-  const [hero, ...rest] = photos;
-  const side = rest.slice(0, 4);
-
-  return (
-    <section className={`${WALL_SECTION} grid gap-3`} style={{ gridTemplateColumns: "3fr 1fr" }}>
-      <article className="relative overflow-hidden rounded-xl border border-live-foreground/10 bg-live-foreground/5">
-        <ContainedPhoto photo={hero} sizes="75vw" priority />
-        <PhotoCaption photo={hero} showMessages={showMessages} showNames={showNames} size="lg" />
-        <PhotoLightboxTrigger index={0} className="absolute inset-0 z-10 cursor-pointer" label="Открыть снимок на весь экран" />
-      </article>
-
-      <div className="grid gap-3" style={{ gridTemplateRows: `repeat(${side.length}, minmax(0, 1fr))` }}>
-        {side.map((photo, position) => (
-          <PhotoTile
-            key={photo.id}
-            photo={photo}
-            index={position + 1}
-            sizes="25vw"
-            priority
-            showMessages={showMessages}
-            showNames={showNames}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
 
 function SlideshowGallery({
   photos,
@@ -424,10 +173,10 @@ function WelcomeWall({
 
   const invitation = (
     <div className={["flex flex-col items-center text-center", empty ? "" : "lg:items-start lg:text-left"].join(" ")}>
-      <h1 className="font-serif text-6xl font-medium leading-none lg:text-8xl">{title}</h1>
-      <span aria-hidden className="mt-10 block h-px w-20 bg-live-foreground/25" />
-      {qrEnabled ? <LiveQr value={publicUrl} size={empty ? 220 : 180} className="mt-10" /> : null}
-      <p className="mt-8 max-w-xl text-2xl leading-snug text-live-muted lg:text-3xl">{hint}</p>
+      <h1 className="font-serif text-[calc(5*var(--u))] font-medium leading-none">{title}</h1>
+      <span aria-hidden className="mt-10 block h-px w-20 bg-live-foreground/25 wide:mt-6" />
+      {qrEnabled ? <LiveQr value={publicUrl} size={empty ? 220 : 180} max="34vh" className="mt-10 wide:mt-6" /> : null}
+      <p className="mt-8 max-w-xl text-[calc(1.4*var(--u))] leading-snug text-live-muted wide:mt-5">{hint}</p>
     </div>
   );
 
@@ -437,7 +186,7 @@ function WelcomeWall({
 
   return (
     <section className={section}>
-      <div className="grid w-full max-w-[100rem] items-center gap-14 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid w-full max-w-[100rem] items-center gap-14 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] tall:grid-cols-1">
         <div className="flex items-start justify-center gap-6">
           {photos.map((photo, index) => {
             const hasCaption = showNames || (showMessages && Boolean(photo.message));
@@ -503,7 +252,7 @@ function LiveBottomBar({
           }}
         >
           <p className="hidden max-w-52 text-right text-lg leading-snug text-live-muted md:block">{QR_HINT}</p>
-          <LiveQr value={qrUrl} size={100} className="p-2" />
+          <LiveQr value={qrUrl} size={100} max="calc(var(--bar) - 1.5rem)" className="p-2" />
         </div>
       ) : null}
     </footer>
@@ -522,7 +271,7 @@ function LiveContestPanel({
   const topTeams = teams.slice(0, 3);
 
   return (
-    <aside className="pointer-events-none fixed bottom-[calc(var(--bar)+1.5rem)] left-6 z-40 hidden w-[26rem] xl:block">
+    <aside className="pointer-events-none fixed bottom-[calc(var(--bar)+1.5rem)] left-6 z-40 hidden max-h-[calc(100vh-var(--bar)-3rem)] w-[26rem] overflow-hidden rounded-xl xl:block">
       <div className="space-y-6 rounded-xl border border-live-foreground/10 bg-live/85 p-6 backdrop-blur">
         <p className={WALL_OVERLINE}>Конкурс команд</p>
 
@@ -671,23 +420,23 @@ function LiveContestBoard({
   const leaderTotal = rows[0]?.total ?? 0;
 
   return (
-    <section className={[WALL_SECTION, "grid grid-cols-[1.4fr_1fr] gap-12 px-12 py-10"].join(" ")}>
+    <section className={[WALL_SECTION, "grid grid-cols-[1.4fr_1fr] gap-12 px-12 py-10 wide:grid-cols-[2fr_1fr] wide:py-6"].join(" ")}>
       <div className="flex min-h-0 flex-col">
         <p className={WALL_OVERLINE}>Конкурс команд</p>
-        <h1 className="mt-3 font-serif text-[3.6vw] font-medium leading-none">{title}</h1>
+        <h1 className="mt-3 font-serif text-[calc(3.6*var(--u))] font-medium leading-none">{title}</h1>
         {rows.length > 0 ? (
-          <ol className="mt-8 divide-y divide-live-foreground/10 border-t border-live-foreground/10">
+          <ol className="mt-8 divide-y divide-live-foreground/10 border-t border-live-foreground/10 wide:mt-5 wide:columns-2 wide:gap-x-12 wide:divide-y-0 wide:border-t-0">
             {rows.map((team, index) => {
               const leads = index === 0 && team.total > 0;
               const share = leaderTotal > 0 ? Math.max(4, Math.round((team.total / leaderTotal) * 100)) : 0;
 
               return (
-                <li key={team.id} className="grid grid-cols-[3rem_1fr_auto] items-center gap-6 py-4">
-                  <span className={["font-serif tabular text-[2.4vw] leading-none", leads ? "text-live-accent" : "text-live-muted"].join(" ")}>
+                <li key={team.id} className="grid grid-cols-[3rem_1fr_auto] items-center gap-6 py-4 wide:break-inside-avoid wide:border-b wide:border-live-foreground/10 wide:py-3">
+                  <span className={["font-serif tabular text-[calc(2.4*var(--u))] leading-none", leads ? "text-live-accent" : "text-live-muted"].join(" ")}>
                     {index + 1}
                   </span>
                   <div className="min-w-0">
-                    <div className="truncate font-serif text-[2.2vw] font-medium leading-none">{team.name}</div>
+                    <div className="truncate font-serif text-[calc(2.2*var(--u))] font-medium leading-none">{team.name}</div>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-live-foreground/10">
                       <div
                         className={["h-full rounded-full", leads ? "bg-live-accent" : "bg-live-muted"].join(" ")}
@@ -695,7 +444,7 @@ function LiveContestBoard({
                       />
                     </div>
                   </div>
-                  <span className={["font-serif tabular text-[3vw] leading-none", leads ? "text-live-accent" : ""].join(" ")}>
+                  <span className={["font-serif tabular text-[calc(3*var(--u))] leading-none", leads ? "text-live-accent" : ""].join(" ")}>
                     {team.total}
                   </span>
                 </li>
@@ -711,7 +460,7 @@ function LiveContestBoard({
         {poll ? (
           <div>
             <p className={WALL_OVERLINE}>Опрос</p>
-            <p className="mt-3 font-serif text-[2vw] leading-tight">{poll.prompt}</p>
+            <p className="mt-3 font-serif text-[calc(2*var(--u))] leading-tight">{poll.prompt}</p>
             <ul className="mt-6 space-y-4">
               {poll.results.slice(0, 5).map((result) => (
                 <li key={result.choice}>
@@ -735,7 +484,7 @@ function LiveContestBoard({
               {latest.slice(0, 4).map((entry) => (
                 <li key={entry.id}>
                   <div className="text-base font-medium uppercase tracking-[0.18em] text-live-muted">{entry.guest_name}</div>
-                  <p className="mt-1 line-clamp-2 font-serif text-[1.6vw] italic leading-snug">{entry.content}</p>
+                  <p className="mt-1 line-clamp-2 font-serif text-[calc(1.6*var(--u))] italic leading-snug">{entry.content}</p>
                 </li>
               ))}
             </ul>
@@ -948,8 +697,11 @@ export default async function LivePage({
   return (
     <main
       className={[
-        "relative h-screen overflow-hidden bg-live text-live-foreground",
-        showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:8.5rem]" : "[--bar:5.5rem]",
+        // --u: 1 % ширины 16:9-кадра, вписанного в экран. На проекторе это 1vw,
+        // на LED-полосе 3:1 или вертикальной панели считается от высоты —
+        // так шрифты стены не раздуваются, когда экран шире, чем выше.
+        "relative h-screen overflow-hidden bg-live text-live-foreground [--u:min(1vw,1.7778vh)]",
+        showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:min(8.5rem,20vh)]" : "[--bar:min(5.5rem,13vh)]",
       ].join(" ")}
     >
       <LiveAutoRefresh />
@@ -1124,7 +876,7 @@ export default async function LivePage({
       ) : null}
 
       {showGallery && layout === "featured" ? (
-        <FeaturedGallery photos={photos} showMessages={showMessages} showNames={showNames} />
+        <LiveFeaturedGrid photos={photos} showMessages={showMessages} showNames={showNames} />
       ) : null}
 
       {showGallery && layout === "slideshow" ? (
@@ -1138,11 +890,11 @@ export default async function LivePage({
       ) : null}
 
       {showGallery && layout === "compact" ? (
-        <CompactGallery photos={photos} showMessages={showMessages} showNames={showNames} />
+        <LiveWallGrid mode="compact" photos={photos} showMessages={showMessages} showNames={showNames} />
       ) : null}
 
       {showGallery && layout === "masonry" ? (
-        <MasonryGallery photos={photos} showMessages={showMessages} showNames={showNames} />
+        <LiveWallGrid mode="masonry" photos={photos} showMessages={showMessages} showNames={showNames} />
       ) : null}
 
       {showBoard ? <LiveContestBoard title={liveTitle} teams={contest.teams} poll={poll} latest={latestEntries} /> : null}
