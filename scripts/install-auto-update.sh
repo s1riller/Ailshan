@@ -46,7 +46,35 @@ Unit=ailshan-update.service
 WantedBy=timers.target
 EOF
 
+# Ночная копия своего Supabase: pg_dump + файлы Storage (scripts/supabase.sh backup)
+cat > /etc/systemd/system/ailshan-backup.service <<EOF
+[Unit]
+Description=Backup Ailshan Supabase (database + storage)
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP_DIR
+ExecStart=/usr/bin/bash $APP_DIR/scripts/supabase.sh backup
+TimeoutStartSec=1800
+EOF
+
+cat > /etc/systemd/system/ailshan-backup.timer <<'EOF'
+[Unit]
+Description=Nightly Ailshan Supabase backup
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=ailshan-backup.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 systemctl daemon-reload
 systemctl enable --now ailshan-update.timer
+systemctl enable --now ailshan-backup.timer
 systemctl start ailshan-update.service
-systemctl status ailshan-update.timer --no-pager
+systemctl status ailshan-update.timer ailshan-backup.timer --no-pager
