@@ -21,6 +21,11 @@ docker compose version >/dev/null
 [[ -f "$SECRETS_FILE" ]] || { echo "ERROR: secrets file not found: $SECRETS_FILE (see secrets/ailshan.env.example)"; exit 1; }
 docker network inspect edge >/dev/null 2>&1 || { echo "ERROR: docker network 'edge' does not exist (it is created by the InstaWorker setup: docker network create edge)"; exit 1; }
 
+# Свой Supabase живёт в соседнем compose-проекте (scripts/supabase.sh up);
+# без него приложение поднимется, но каждая страница будет падать.
+KONG_HEALTH="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' supabase-kong 2>/dev/null || true)"
+[[ "$KONG_HEALTH" == "healthy" ]] || echo "WARNING: supabase-kong is ${KONG_HEALTH:-not running} — run scripts/supabase.sh up first"
+
 # Домен нужен для публичной проверки; берём из того же .env, что читает compose.
 DOMAIN="$(grep -E '^DOMAIN=' .env | tail -n1 | cut -d= -f2- || true)"
 DOMAIN="${DOMAIN:-ailshan.jhfasd.space}"
