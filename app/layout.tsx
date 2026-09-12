@@ -1,14 +1,34 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Cormorant_Garamond, Golos_Text } from "next/font/google";
 
 import { Toaster } from "@/components/ui/sonner";
+import { getSiteUrl } from "@/lib/env";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin", "cyrillic"] });
+// Антиква для заголовков, счётчиков и всего, что написано человеком;
+// гротеск с родной кириллицей — для интерфейса. Inter ушёл.
+const serif = Cormorant_Garamond({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  variable: "--font-serif",
+  display: "swap",
+});
+
+const sans = Golos_Text({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Ailshan",
-  description: "Фото и пожелания гостей для мероприятий",
+  metadataBase: new URL(getSiteUrl()),
+  title: {
+    default: "Ailshan",
+    template: "%s — Ailshan",
+  },
+  description: "Фотографии гостей на экране зала в тот же вечер. Страница события, живая галерея и командные игры для свадеб и частных событий.",
   applicationName: "Ailshan",
   appleWebApp: {
     capable: true,
@@ -18,6 +38,11 @@ export const metadata: Metadata = {
   formatDetection: {
     telephone: false,
   },
+  openGraph: {
+    siteName: "Ailshan",
+    locale: "ru_RU",
+    type: "website",
+  },
 };
 
 export const viewport: Viewport = {
@@ -25,15 +50,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#f5f8fc",
+  themeColor: "#F7F4EE",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ru" suppressHydrationWarning>
-      <body className={inter.className} suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning className={`${sans.variable} ${serif.variable}`}>
+      <body className="font-sans" suppressHydrationWarning>
         {children}
-        <Toaster richColors position="top-center" />
+        <Toaster position="top-center" toastOptions={{ className: "font-sans" }} />
       </body>
     </html>
   );
