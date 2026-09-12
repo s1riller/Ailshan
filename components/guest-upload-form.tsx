@@ -17,7 +17,6 @@ import { createUploadMetadataAction } from "@/lib/actions/uploads";
 import { readGuestName, rememberGuestName, rememberUpload } from "@/lib/guest-client";
 import { prepareImage, uploadWithProgress } from "@/lib/image-compress";
 import { uploadMetadataSchema } from "@/lib/validations/upload";
-import { cn } from "@/lib/utils";
 
 const formSchema = uploadMetadataSchema
   .pick({
@@ -25,7 +24,6 @@ const formSchema = uploadMetadataSchema
     message: true,
   })
   .extend({
-    acceptedPrivacy: z.boolean().refine((value) => value, "Подтвердите согласие перед отправкой"),
   });
 
 type FormInput = z.infer<typeof formSchema>;
@@ -68,7 +66,6 @@ export function GuestUploadForm({
     defaultValues: {
       guestName: "",
       message: "",
-      acceptedPrivacy: false,
     },
   });
 
@@ -168,7 +165,8 @@ export function GuestUploadForm({
         filePath,
         fileType: file.type,
         fileSize: file.size,
-        acceptedPrivacy: values.acceptedPrivacy,
+        // Чекбокса нет: отправка снимка и есть согласие, об этом сказано под кнопкой
+        acceptedPrivacy: true,
       });
     } catch (error) {
       console.error("createUploadMetadataAction", error);
@@ -331,38 +329,11 @@ export function GuestUploadForm({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="acceptedPrivacy"
-          render={({ field }) => (
-            <FormItem>
-              <label
-                className={cn(
-                  "flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors",
-                  field.value ? "border-accent/40 bg-accent-soft/40" : "bg-card",
-                )}
-              >
-                <input
-                  ref={field.ref}
-                  type="checkbox"
-                  checked={field.value}
-                  disabled={busy}
-                  onChange={(event) => field.onChange(event.target.checked)}
-                  onBlur={field.onBlur}
-                  className="mt-0.5 h-5 w-5 shrink-0 rounded border-input"
-                />
-                <span>Фотография будет видна организаторам и может появиться на экране в зале.</span>
-              </label>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
         {/*
           Панель отправки — последний элемент карточки: липнет к низу экрана,
           а под ней ничего не остаётся. Отступы компенсируют p-5 / sm:p-6 у CardContent.
         */}
-        <div className="sticky bottom-0 -mx-5 rounded-b-xl border-t bg-card/95 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="sticky bottom-16 -mx-5 rounded-b-xl border-t bg-card/95 px-5 pb-5 pt-3 backdrop-blur sm:-mx-6 sm:px-6">
           {busy && phase !== "preparing" ? (
             <div className="mb-3" role="status" aria-live="polite">
               <div className="flex items-center justify-between text-sm">

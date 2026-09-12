@@ -38,6 +38,7 @@ type EventSettingsFormProps = {
 };
 
 const liveLayouts = [
+  ["halo", "Карусель"],
   ["masonry", "Плитка"],
   ["featured", "Главный кадр"],
   ["slideshow", "Слайд-шоу"],

@@ -20,11 +20,11 @@ export default async function DashboardPage() {
     admin.from("events").select("*", { count: "exact", head: true }).eq("owner_id", user.id).eq("is_active", true),
     admin
       .from("uploads")
-      .select("events!inner(owner_id)", { count: "exact", head: true })
+      .select("events!uploads_event_id_fkey!inner(owner_id)", { count: "exact", head: true })
       .eq("events.owner_id", user.id),
     admin
       .from("uploads")
-      .select("events!inner(owner_id)", { count: "exact", head: true })
+      .select("events!uploads_event_id_fkey!inner(owner_id)", { count: "exact", head: true })
       .eq("events.owner_id", user.id)
       .eq("status", "pending"),
     admin

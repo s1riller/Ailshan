@@ -11,6 +11,8 @@ import { EventTabs } from "@/components/event-tabs";
 import { GamesAdminPanel, type PendingEntry } from "@/components/games-admin-panel";
 import { QuizAdminPanel } from "@/components/quiz-admin-panel";
 import { EventStatusBadge, UploadStatusBadge } from "@/components/status-badge";
+import { LiveRemote, PinToScreenButton } from "@/components/live-remote";
+import { PhotoLightbox, PhotoLightboxTrigger } from "@/components/photo-lightbox";
 import { UploadPreview } from "@/components/upload-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,7 @@ import { bulkModerateUploadsAction, moderateUploadAction } from "@/lib/actions/u
 import { requireActiveProfile } from "@/lib/authz";
 import { getSiteUrl } from "@/lib/env";
 import { loadContest } from "@/lib/games/contest";
+import { safeLiveMode } from "@/lib/live-modes";
 import { UPLOAD_FILTERS, joinMeta, planLabel } from "@/lib/labels";
 import { isPro } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -50,6 +53,7 @@ const LOG_ACTION_LABEL: Record<string, string> = {
 };
 
 const LIVE_LAYOUT_LABEL: Record<string, string> = {
+  halo: "Карусель",
   masonry: "Плитка",
   featured: "Главный кадр",
   slideshow: "Слайд-шоу",
@@ -171,7 +175,7 @@ export default async function EventAdminPage({
   const { data: event, error: eventError } = await supabase
     .from("events")
     .select(
-      "id, title, slug, date, location, is_active, guest_intro, thanks_text, live_layout, live_transition, slide_duration_seconds, live_qr_effect, live_qr_interval_seconds, show_messages_on_live, show_names_on_live, show_qr_on_live, auto_approve, max_file_size_mb, custom_slug, brand_name, brand_color, cover_title, archive_enabled, guest_instruction, photo_limit",
+      "id, title, slug, date, location, is_active, guest_intro, thanks_text, live_layout, live_transition, slide_duration_seconds, live_qr_effect, live_qr_interval_seconds, show_messages_on_live, show_names_on_live, show_qr_on_live, auto_approve, max_file_size_mb, custom_slug, brand_name, brand_color, cover_title, archive_enabled, guest_instruction, photo_limit, live_mode, live_pinned_upload_id",
     )
     .eq("id", id)
     .eq("owner_id", user.id)
@@ -224,6 +228,27 @@ export default async function EventAdminPage({
   const publicUrl = `${getSiteUrl()}/e/${publicSlug}`;
   const playUrl = `${getSiteUrl()}/e/${publicSlug}/play`;
   const liveUrl = `${getSiteUrl()}/live/${publicSlug}`;
+  const galleryUrl = `${getSiteUrl()}/e/${publicSlug}/gallery`;
+
+  // Пульт экрана: текущий режим и снимок, выведенный крупно
+  const liveMode = safeLiveMode(event.live_mode);
+  const pinnedId: string | null = event.live_pinned_upload_id ?? null;
+  const pinnedFromList = pinnedId ? signedUploads.find((upload) => upload.id === pinnedId) : undefined;
+  const pinnedPreview = pinnedFromList
+    ? { id: pinnedFromList.id, guestName: pinnedFromList.guest_name, signedUrl: pinnedFromList.signedUrl }
+    : pinnedId
+      ? await (async () => {
+          const { data: row } = await admin
+            .from("uploads")
+            .select("id, guest_name, file_path")
+            .eq("id", pinnedId)
+            .eq("event_id", event.id)
+            .maybeSingle();
+          if (!row) return null;
+          const { data: signed } = await admin.storage.from("event-photos").createSignedUrl(row.file_path, 60 * 20);
+          return { id: row.id, guestName: row.guest_name, signedUrl: signed?.signedUrl ?? "" };
+        })()
+      : null;
   const uploadStats = {
     total: uploadItems.length,
     pending: uploadItems.filter((upload) => upload.status === "pending").length,
@@ -380,21 +405,32 @@ export default async function EventAdminPage({
                   Снимков пока нет — гости ещё не начали.
                 </p>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {signedUploads.slice(0, 6).map((upload) => (
-                    <article key={upload.id} className="overflow-hidden rounded-xl border bg-card">
-                      <div className="relative aspect-square bg-secondary">
-                        {upload.signedUrl ? (
-                          <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="240px" />
-                        ) : null}
-                      </div>
-                      <div className="space-y-1.5 p-3">
-                        <p className="truncate text-sm font-medium">{upload.guest_name}</p>
-                        <UploadStatusBadge status={upload.status} />
-                      </div>
-                    </article>
-                  ))}
-                </div>
+                <PhotoLightbox
+                  photos={signedUploads.slice(0, 6).map((upload) => ({
+                    id: upload.id,
+                    url: upload.signedUrl,
+                    guestName: upload.guest_name,
+                    message: upload.message,
+                  }))}
+                >
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {signedUploads.slice(0, 6).map((upload, index) => (
+                      <article key={upload.id} className="overflow-hidden rounded-xl border bg-card">
+                        <PhotoLightboxTrigger index={index} label={`Открыть снимок: ${upload.guest_name}`}>
+                          <div className="relative aspect-square bg-secondary">
+                            {upload.signedUrl ? (
+                              <Image src={upload.signedUrl} alt="" fill className="object-cover" sizes="240px" />
+                            ) : null}
+                          </div>
+                        </PhotoLightboxTrigger>
+                        <div className="space-y-1.5 p-3">
+                          <p className="truncate text-sm font-medium">{upload.guest_name}</p>
+                          <UploadStatusBadge status={upload.status} />
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </PhotoLightbox>
               )}
             </section>
 
@@ -408,6 +444,12 @@ export default async function EventAdminPage({
                     <Link href={liveUrl} target="_blank">
                       <ExternalLink className="h-4 w-4" />
                       Проектор
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" className="col-span-2 w-full">
+                    <Link href={galleryUrl} target="_blank">
+                      <ExternalLink className="h-4 w-4" />
+                      Галерея для гостей
                     </Link>
                   </Button>
                 </div>
@@ -518,6 +560,14 @@ export default async function EventAdminPage({
                     </div>
                     <div className="grid grid-cols-2 gap-2 border-t p-3">
                       <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} fullWidth />
+                      <PinToScreenButton
+                        eventId={event.id}
+                        uploadId={upload.id}
+                        status={upload.status}
+                        pinnedId={pinnedId}
+                        size="default"
+                        className="col-span-2"
+                      />
                     </div>
                   </article>
                 ))}
@@ -567,6 +617,7 @@ export default async function EventAdminPage({
                         <TableCell>
                           <div className="flex justify-end gap-2">
                             <ModerationActions uploadId={upload.id} eventId={event.id} status={upload.status} />
+                            <PinToScreenButton eventId={event.id} uploadId={upload.id} status={upload.status} pinnedId={pinnedId} />
                           </div>
                         </TableCell>
                       </TableRow>
@@ -601,6 +652,8 @@ export default async function EventAdminPage({
       ) : null}
 
       {activeTab === "live" ? (
+        <div className="space-y-10">
+        <LiveRemote eventId={event.id} mode={liveMode} pinned={pinnedPreview} liveUrl={liveUrl} />
         <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
           <section className="space-y-4">
             <SectionHeader
@@ -669,10 +722,12 @@ export default async function EventAdminPage({
             </Button>
           </section>
         </div>
+        </div>
       ) : null}
 
       {activeTab === "games" ? (
         <div className="space-y-10">
+          <LiveRemote eventId={event.id} mode={liveMode} pinned={pinnedPreview} liveUrl={liveUrl} compact />
           <QuizAdminPanel
             eventId={event.id}
             playUrl={playUrl}
@@ -728,7 +783,7 @@ export default async function EventAdminPage({
       ) : null}
 
       {activeTab === "qr" ? (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-3">
           <Card>
             <CardContent className="space-y-4 p-5 sm:p-6">
               <div>
@@ -755,6 +810,20 @@ export default async function EventAdminPage({
               <EventQrCode value={liveUrl} title="Экран зала" color={event.brand_color} />
               <code className="block break-all rounded-lg border bg-secondary/60 p-3 text-xs">{liveUrl}</code>
               <CopyButton value={liveUrl} label="Скопировать ссылку" className="w-full" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="space-y-4 p-5 sm:p-6">
+              <div>
+                <div className="eyebrow">Для гостей</div>
+                <h2 className="mt-1 font-serif text-2xl font-medium">QR в общую галерею</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Все одобренные снимки вечера, обновляется сама. Хорошо смотрится на фотозоне и у выхода.
+                </p>
+              </div>
+              <EventQrCode value={galleryUrl} title="Галерея вечера" color={event.brand_color} />
+              <code className="block break-all rounded-lg border bg-secondary/60 p-3 text-xs">{galleryUrl}</code>
+              <CopyButton value={galleryUrl} label="Скопировать ссылку" className="w-full" />
             </CardContent>
           </Card>
         </div>

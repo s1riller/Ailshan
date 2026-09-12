@@ -94,6 +94,9 @@ export default async function ThanksPage({ params }: { params: Promise<{ slug: s
             <Link href={`/e/${publicSlug}`}>Добавить ещё снимок</Link>
           </Button>
           <Button asChild variant="link">
+            <Link href={`/e/${publicSlug}/gallery`}>Смотреть галерею вечера</Link>
+          </Button>
+          <Button asChild variant="link">
             <Link href={`/e/${publicSlug}/play`}>Открыть игры вечера</Link>
           </Button>
         </div>

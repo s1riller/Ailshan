@@ -4,6 +4,12 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { LiveAutoRefresh } from "@/components/live-auto-refresh";
+import { LiveHaloReel } from "@/components/live-halo-reel";
+import { LivePinnedPhoto } from "@/components/live-pinned-photo";
+import { LiveWelcome } from "@/components/live-welcome";
+import { joinMeta } from "@/lib/labels";
+import { safeLiveMode } from "@/lib/live-modes";
+import { formatDate } from "@/lib/utils";
 import { LiveQr } from "@/components/live-qr";
 import { QuizLiveOverlay } from "@/components/quiz-live-overlay";
 import { getSiteUrl } from "@/lib/env";
@@ -19,7 +25,7 @@ type LivePhoto = {
   signedUrl: string;
 };
 
-type LiveLayout = "masonry" | "featured" | "slideshow" | "compact";
+type LiveLayout = "masonry" | "featured" | "slideshow" | "compact" | "halo";
 type LiveTransition = "fade" | "slide" | "zoom" | "stories";
 type LiveQrEffect = "fade" | "slide" | "pulse" | "stories";
 
@@ -33,7 +39,7 @@ type LiveGameEntry = {
 type PollResult = { choice: string; count: number; share: number };
 type LivePoll = { prompt: string; results: PollResult[] };
 
-const allowedLayouts: LiveLayout[] = ["masonry", "featured", "slideshow", "compact"];
+const allowedLayouts: LiveLayout[] = ["masonry", "featured", "slideshow", "compact", "halo"];
 const allowedTransitions: LiveTransition[] = ["fade", "slide", "zoom", "stories"];
 const allowedQrEffects: LiveQrEffect[] = ["fade", "slide", "pulse", "stories"];
 
@@ -589,6 +595,8 @@ const loadEvent = cache(async (slug: string) => {
       custom_slug,
       brand_name,
       cover_title,
+      date,
+      location,
       is_active,
       live_layout,
       live_transition,
@@ -597,7 +605,9 @@ const loadEvent = cache(async (slug: string) => {
       live_qr_interval_seconds,
       show_messages_on_live,
       show_names_on_live,
-      show_qr_on_live
+      show_qr_on_live,
+      live_mode,
+      live_pinned_upload_id
     `,
     )
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
@@ -632,6 +642,120 @@ async function signedUrlFor(supabase: ReturnType<typeof createAdminClient>, file
   signedUrlCache.set(filePath, { url: data.signedUrl, freshUntil: now + SIGNED_URL_REUSE_MS });
 
   return data.signedUrl;
+}
+
+/** Таблица команд на весь экран — режим «Таблица команд» с пульта ведущего */
+function LiveContestBoard({
+  title,
+  teams,
+  poll,
+  latest,
+}: {
+  title: string;
+  teams: ContestTeam[];
+  poll: LivePoll | null;
+  latest: LiveGameEntry[];
+}) {
+  const rows = teams.slice(0, 10);
+  const leaderTotal = rows[0]?.total ?? 0;
+
+  return (
+    <section className={[WALL_SECTION, "grid grid-cols-[1.4fr_1fr] gap-12 px-12 py-10"].join(" ")}>
+      <div className="flex min-h-0 flex-col">
+        <p className={WALL_OVERLINE}>Конкурс команд</p>
+        <h1 className="mt-3 font-serif text-[3.6vw] font-medium leading-none">{title}</h1>
+        {rows.length > 0 ? (
+          <ol className="mt-8 divide-y divide-live-foreground/10 border-t border-live-foreground/10">
+            {rows.map((team, index) => {
+              const leads = index === 0 && team.total > 0;
+              const share = leaderTotal > 0 ? Math.max(4, Math.round((team.total / leaderTotal) * 100)) : 0;
+
+              return (
+                <li key={team.id} className="grid grid-cols-[3rem_1fr_auto] items-center gap-6 py-4">
+                  <span className={["font-serif tabular text-[2.4vw] leading-none", leads ? "text-live-accent" : "text-live-muted"].join(" ")}>
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate font-serif text-[2.2vw] font-medium leading-none">{team.name}</div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-live-foreground/10">
+                      <div
+                        className={["h-full rounded-full", leads ? "bg-live-accent" : "bg-live-muted"].join(" ")}
+                        style={{ width: `${share}%` }}
+                      />
+                    </div>
+                  </div>
+                  <span className={["font-serif tabular text-[3vw] leading-none", leads ? "text-live-accent" : ""].join(" ")}>
+                    {team.total}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        ) : (
+          <p className="mt-10 text-2xl text-live-muted">Команды появятся, когда гости присоединятся к игре.</p>
+        )}
+      </div>
+
+      <div className="flex min-h-0 flex-col gap-10 border-l border-live-foreground/10 pl-12">
+        {poll ? (
+          <div>
+            <p className={WALL_OVERLINE}>Опрос</p>
+            <p className="mt-3 font-serif text-[2vw] leading-tight">{poll.prompt}</p>
+            <ul className="mt-6 space-y-4">
+              {poll.results.slice(0, 5).map((result) => (
+                <li key={result.choice}>
+                  <div className="flex items-baseline justify-between gap-4 text-xl">
+                    <span className="truncate">{result.choice}</span>
+                    <span className="tabular text-live-muted">{result.share}%</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-live-foreground/10">
+                    <div className="h-full rounded-full bg-live-accent" style={{ width: `${Math.max(3, result.share)}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {latest.length > 0 ? (
+          <div>
+            <p className={WALL_OVERLINE}>Последние ответы</p>
+            <ul className="mt-4 space-y-5">
+              {latest.slice(0, 4).map((entry) => (
+                <li key={entry.id}>
+                  <div className="text-base font-medium uppercase tracking-[0.18em] text-live-muted">{entry.guest_name}</div>
+                  <p className="mt-1 line-clamp-2 font-serif text-[1.6vw] italic leading-snug">{entry.content}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** Закреплённый снимок может быть старше выборки стены — тогда грузим его отдельно */
+async function loadPinned(
+  supabase: ReturnType<typeof createAdminClient>,
+  uploadId: string,
+  eventId: string,
+): Promise<LivePhoto | null> {
+  const { data: upload } = await supabase
+    .from("uploads")
+    .select("id, guest_name, message, file_path")
+    .eq("id", uploadId)
+    .eq("event_id", eventId)
+    .eq("status", "approved")
+    .maybeSingle();
+  if (!upload) return null;
+
+  return {
+    id: upload.id,
+    guest_name: upload.guest_name,
+    message: upload.message,
+    signedUrl: await signedUrlFor(supabase, upload.file_path),
+  };
 }
 
 function liveTitleOf(event: { cover_title: string | null; brand_name: string | null; title: string }) {
@@ -783,9 +907,22 @@ export default async function LivePage({
   const panelTeams = contestRunning ? contest.teams : [];
   const hasContestPanel = panelTeams.length > 0 || poll !== null || latestEntries.length > 0;
 
+  // Режим экрана выбирает ведущий из кабинета; «авто» — заставка, пока снимков нет
+  const mode = safeLiveMode(event.live_mode);
   const fewPhotos = photos.length <= FEW_PHOTOS_LIMIT;
-  // В приглашении QR стоит по центру — в полосе он бы дублировался
-  const qrInBar = qrEnabled && !fewPhotos;
+  const showBoard = mode === "contest";
+  const showWelcome = !showBoard && (mode === "welcome" || photos.length === 0);
+  const showFewPhotos = !showBoard && !showWelcome && fewPhotos;
+  const showGallery = !showBoard && !showWelcome && !showFewPhotos;
+  const withPanel = mode === "split" && hasContestPanel && !showBoard;
+  // В приглашении и на заставке QR стоит по центру — в полосе он бы дублировался
+  const qrInBar = qrEnabled && showGallery;
+
+  // Снимок, выведенный ведущим на экран крупно
+  const pinned = event.live_pinned_upload_id
+    ? (photos.find((photo) => photo.id === event.live_pinned_upload_id) ??
+      (await loadPinned(supabase, event.live_pinned_upload_id, event.id)))
+    : null;
 
   return (
     <main
@@ -933,7 +1070,11 @@ export default async function LivePage({
         }
       `}</style>
 
-      {fewPhotos ? (
+      {showWelcome ? (
+        <LiveWelcome title={liveTitle} subtitle={joinMeta(formatDate(event.date), event.location) || null} qrUrl={qrEnabled ? publicUrl : null} />
+      ) : null}
+
+      {showFewPhotos ? (
         <WelcomeWall
           title={liveTitle}
           photos={photos}
@@ -941,15 +1082,30 @@ export default async function LivePage({
           qrEnabled={qrEnabled}
           showMessages={showMessages}
           showNames={showNames}
-          withPanel={hasContestPanel}
+          withPanel={withPanel}
         />
       ) : null}
 
-      {!fewPhotos && layout === "featured" ? (
+      {showGallery && layout === "halo" ? (
+        <LiveHaloReel
+          photos={photos.map((photo) => ({
+            id: photo.id,
+            url: `/api/photo/${photo.id}`,
+            guestName: photo.guest_name,
+            message: photo.message,
+          }))}
+          title={liveTitle}
+          showNames={showNames}
+          showMessages={showMessages}
+          withPanel={withPanel}
+        />
+      ) : null}
+
+      {showGallery && layout === "featured" ? (
         <FeaturedGallery photos={photos} showMessages={showMessages} showNames={showNames} />
       ) : null}
 
-      {!fewPhotos && layout === "slideshow" ? (
+      {showGallery && layout === "slideshow" ? (
         <SlideshowGallery
           photos={photos}
           showMessages={showMessages}
@@ -959,17 +1115,29 @@ export default async function LivePage({
         />
       ) : null}
 
-      {!fewPhotos && layout === "compact" ? (
+      {showGallery && layout === "compact" ? (
         <CompactGallery photos={photos} showMessages={showMessages} showNames={showNames} />
       ) : null}
 
-      {!fewPhotos && layout === "masonry" ? (
+      {showGallery && layout === "masonry" ? (
         <MasonryGallery photos={photos} showMessages={showMessages} showNames={showNames} />
+      ) : null}
+
+      {showBoard ? <LiveContestBoard title={liveTitle} teams={contest.teams} poll={poll} latest={latestEntries} /> : null}
+
+      {pinned ? (
+        <LivePinnedPhoto
+          url={pinned.signedUrl}
+          guestName={pinned.guest_name}
+          message={pinned.message}
+          showNames={showNames}
+          showMessages={showMessages}
+        />
       ) : null}
 
       <LiveBottomBar title={liveTitle} qrUrl={qrInBar ? publicUrl : null} qrEffect={qrEffect} qrInterval={qrInterval} />
 
-      {hasContestPanel ? <LiveContestPanel teams={panelTeams} poll={poll} latest={latestEntries} /> : null}
+      {withPanel ? <LiveContestPanel teams={panelTeams} poll={poll} latest={latestEntries} /> : null}
 
       {quiz && liveQuizStatus ? (
         <QuizLiveOverlay

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const liveLayoutSchema = z.enum(["masonry", "featured", "slideshow", "compact"]);
+export const liveLayoutSchema = z.enum(["masonry", "featured", "slideshow", "compact", "halo"]);
 export const liveTransitionSchema = z.enum(["fade", "slide", "zoom", "stories"]);
 export const liveQrEffectSchema = z.enum(["fade", "slide", "pulse", "stories"]);
 
