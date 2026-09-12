@@ -6,3 +6,7 @@ dist
 build
 coverage
 *.tsbuildinfo
+
+# Секреты сервера: в репозитории только пример
+secrets/*
+!secrets/*.example

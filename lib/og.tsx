@@ -1,26 +1,24 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { ImageResponse } from "next/og";
 
 export const OG_SIZE = { width: 1200, height: 630 };
 
 /**
  * Satori (движок next/og) не умеет системные шрифты — гарнитуру нужно отдать
- * бинарником. Берём Cormorant Garamond с Google Fonts; старый User-Agent
- * заставляет их отдать TTF вместо woff2, который Satori не читает.
- * Если сеть недоступна — рендерим без текста, но с брендом.
+ * бинарником, причём TTF: woff2 он не читает. Cormorant Garamond лежит в
+ * репозитории (assets/fonts, лицензия OFL), а не тянется с Google Fonts:
+ * без шрифта Satori не рисует текст вообще, и сборка в Docker без сети
+ * падала на /opengraph-image. Читаем через process.cwd(), как в документации
+ * next/og, — так файл попадает в трассировку standalone-сборки.
  */
-async function loadSerif(): Promise<ArrayBuffer | null> {
-  try {
-    const css = await fetch(
-      "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500&subset=cyrillic",
-      { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:5.0)" }, cache: "force-cache" },
-    ).then((response) => response.text());
-    const url = css.match(/src: url\(([^)]+)\)/)?.[1];
-    if (!url) return null;
+const SERIF_PATH = join(process.cwd(), "assets", "fonts", "CormorantGaramond-Medium.ttf");
+let serifPromise: Promise<Buffer> | null = null;
 
-    return await fetch(url, { cache: "force-cache" }).then((response) => response.arrayBuffer());
-  } catch {
-    return null;
-  }
+function loadSerif() {
+  serifPromise ??= readFile(SERIF_PATH);
+  return serifPromise;
 }
 
 export async function brandImage({
@@ -35,8 +33,8 @@ export async function brandImage({
   accent?: string;
 }) {
   const serif = await loadSerif();
-  const fonts = serif ? [{ name: "Cormorant", data: serif, weight: 500 as const, style: "normal" as const }] : [];
-  const fontFamily = serif ? "Cormorant" : "serif";
+  const fonts = [{ name: "Cormorant", data: serif, weight: 500 as const, style: "normal" as const }];
+  const fontFamily = "Cormorant";
 
   return new ImageResponse(
     (

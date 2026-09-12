@@ -21,7 +21,27 @@ const supabaseUrl = parseSupabaseUrl();
 const isLoopback = supabaseUrl ? /^(127\.0\.0\.1|localhost|\[::1\])$/.test(supabaseUrl.hostname) : false;
 
 const nextConfig: NextConfig = {
+  // Самодостаточная сборка для Docker: .next/standalone + .next/static,
+  // запускается `node server.js` без node_modules проекта.
+  output: "standalone",
+  poweredByHeader: false,
+  // Шрифт для OG-картинок читается с диска (lib/og.tsx); трассировка
+  // standalone-сборки должна положить его рядом с маршрутами.
+  outputFileTracingIncludes: {
+    "/opengraph-image": ["./assets/fonts/*"],
+    "/e/[slug]/opengraph-image": ["./assets/fonts/*"],
+  },
+  experimental: {
+    // Сборка идёт на том же сервере, где живёт InstaWorker. Воркеры
+    // статической генерации по умолчанию = ядра − 1, и каждый берёт
+    // сотни МБ; статических маршрутов здесь пять, двух воркеров хватает.
+    cpus: 2,
+  },
   images: {
+    // Снимки не меняются после одобрения: варианты оптимизатора живут сутки,
+    // а кеш на диске ограничен явно, а не «половиной свободного места».
+    minimumCacheTTL: 86400,
+    maximumDiskCacheSize: 2 * 1024 * 1024 * 1024,
     remotePatterns: [
       {
         protocol: "https",

@@ -1,0 +1,17 @@
+# В образ попадает только исходный код: зависимости ставятся внутри
+# (нативный sharp должен быть собран под Linux, а не скопирован с Windows),
+# а секреты передаются через окружение контейнера.
+node_modules
+.next
+.git
+.env
+.env*.local
+.env.production.example
+*.tsbuildinfo
+coverage
+supabase/.temp
+supabase/.branches
+scripts/seed-local-admin.mjs
+Dockerfile
+compose.yaml
+.dockerignore

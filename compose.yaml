@@ -1,0 +1,54 @@
+name: ailshan
+
+# Ailshan живёт на одном хосте с InstaWorker. Порты 80/443 держит его caddy,
+# поэтому здесь наружу ничего не публикуется: контейнер подключён к внешней
+# сети edge (docker network create edge — она уже есть), и caddy из проекта
+# instaworker проксирует домен на ailshan:3000 по имени контейнера — так же,
+# как autoshow_admin.
+services:
+  ailshan:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL in .env}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY in .env}
+        NEXT_PUBLIC_SITE_URL: https://${DOMAIN:-ailshan.jhfasd.space}
+    # Фиксированное имя: по нему caddy находит контейнер в сети edge.
+    container_name: ailshan
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      # Подставляется в QR-коды на экране зала и в ссылки для команд.
+      NEXT_PUBLIC_SITE_URL: https://${DOMAIN:-ailshan.jhfasd.space}
+      # Даты на экране форматируются без явной зоны — берём зону мероприятия,
+      # а не UTC контейнера, иначе около полуночи «уезжает» день.
+      TZ: ${TZ:-Europe/Moscow}
+    # Секрет один — сервисный ключ Supabase; лежит вне каталога с кодом.
+    env_file:
+      - path: ${AILSHAN_ENV_FILE:-/opt/ailshan/secrets/ailshan.env}
+        required: true
+    volumes:
+      # Варианты картинок для стены и галереи: без тома каждый перезапуск
+      # начинался бы с холодного кеша и повторной перекачки снимков из Supabase.
+      - image_cache:/app/.next/cache
+    expose:
+      - "3000"
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    deploy:
+      resources:
+        limits:
+          # В работе процесс занимает 150–400 МБ; лимит защищает InstaWorker
+          # на общей машине, если что-то потечёт.
+          memory: 1g
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  image_cache:
