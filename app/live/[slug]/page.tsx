@@ -173,10 +173,10 @@ function WelcomeWall({
 
   const invitation = (
     <div className={["flex flex-col items-center text-center", empty ? "" : "lg:items-start lg:text-left"].join(" ")}>
-      <h1 className="font-serif text-[calc(5*var(--u))] font-medium leading-none">{title}</h1>
+      <h1 className="font-serif text-[clamp(calc(5*var(--u)),4vw,calc(10*var(--u)))] font-medium leading-none">{title}</h1>
       <span aria-hidden className="mt-10 block h-px w-20 bg-live-foreground/25 wide:mt-6" />
       {qrEnabled ? <LiveQr value={publicUrl} size={empty ? 220 : 180} max="34vh" className="mt-10 wide:mt-6" /> : null}
-      <p className="mt-8 max-w-xl text-[calc(1.4*var(--u))] leading-snug text-live-muted wide:mt-5">{hint}</p>
+      <p className="mt-8 max-w-xl text-[calc(1.4*var(--t))] leading-snug text-live-muted wide:mt-5">{hint}</p>
     </div>
   );
 
@@ -272,7 +272,7 @@ function LiveContestPanel({
 
   return (
     <aside className="pointer-events-none fixed bottom-[calc(var(--bar)+1.5rem)] left-6 z-40 hidden max-h-[calc(100vh-var(--bar)-3rem)] w-[26rem] overflow-hidden rounded-xl xl:block">
-      <div className="space-y-6 rounded-xl border border-live-foreground/10 bg-live/85 p-6 backdrop-blur">
+      <div className="space-y-6 rounded-xl border border-live-foreground/10 bg-live/85 p-6 backdrop-blur wide:space-y-4 wide:p-5">
         <p className={WALL_OVERLINE}>Конкурс команд</p>
 
         {topTeams.length > 0 ? (
@@ -324,7 +324,7 @@ function LiveContestPanel({
         ) : null}
 
         {latest.length > 0 ? (
-          <ol className="space-y-4">
+          <ol className="space-y-4 wide:hidden">
             {latest.map((entry) => (
               <li key={entry.id}>
                 <p className={`truncate ${WALL_OVERLINE}`}>{entry.guest_name}</p>
@@ -423,7 +423,7 @@ function LiveContestBoard({
     <section className={[WALL_SECTION, "grid grid-cols-[1.4fr_1fr] gap-12 px-12 py-10 wide:grid-cols-[2fr_1fr] wide:py-6"].join(" ")}>
       <div className="flex min-h-0 flex-col">
         <p className={WALL_OVERLINE}>Конкурс команд</p>
-        <h1 className="mt-3 font-serif text-[calc(3.6*var(--u))] font-medium leading-none">{title}</h1>
+        <h1 className="mt-3 font-serif text-[calc(3.6*var(--t))] font-medium leading-none">{title}</h1>
         {rows.length > 0 ? (
           <ol className="mt-8 divide-y divide-live-foreground/10 border-t border-live-foreground/10 wide:mt-5 wide:columns-2 wide:gap-x-12 wide:divide-y-0 wide:border-t-0">
             {rows.map((team, index) => {
@@ -432,11 +432,11 @@ function LiveContestBoard({
 
               return (
                 <li key={team.id} className="grid grid-cols-[3rem_1fr_auto] items-center gap-6 py-4 wide:break-inside-avoid wide:border-b wide:border-live-foreground/10 wide:py-3">
-                  <span className={["font-serif tabular text-[calc(2.4*var(--u))] leading-none", leads ? "text-live-accent" : "text-live-muted"].join(" ")}>
+                  <span className={["font-serif tabular text-[calc(2.4*var(--t))] leading-none", leads ? "text-live-accent" : "text-live-muted"].join(" ")}>
                     {index + 1}
                   </span>
                   <div className="min-w-0">
-                    <div className="truncate font-serif text-[calc(2.2*var(--u))] font-medium leading-none">{team.name}</div>
+                    <div className="truncate font-serif text-[calc(2.2*var(--t))] font-medium leading-none">{team.name}</div>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-live-foreground/10">
                       <div
                         className={["h-full rounded-full", leads ? "bg-live-accent" : "bg-live-muted"].join(" ")}
@@ -444,7 +444,7 @@ function LiveContestBoard({
                       />
                     </div>
                   </div>
-                  <span className={["font-serif tabular text-[calc(3*var(--u))] leading-none", leads ? "text-live-accent" : ""].join(" ")}>
+                  <span className={["font-serif tabular text-[calc(3*var(--t))] leading-none", leads ? "text-live-accent" : ""].join(" ")}>
                     {team.total}
                   </span>
                 </li>
@@ -460,7 +460,7 @@ function LiveContestBoard({
         {poll ? (
           <div>
             <p className={WALL_OVERLINE}>Опрос</p>
-            <p className="mt-3 font-serif text-[calc(2*var(--u))] leading-tight">{poll.prompt}</p>
+            <p className="mt-3 font-serif text-[calc(2*var(--t))] leading-tight">{poll.prompt}</p>
             <ul className="mt-6 space-y-4">
               {poll.results.slice(0, 5).map((result) => (
                 <li key={result.choice}>
@@ -484,7 +484,7 @@ function LiveContestBoard({
               {latest.slice(0, 4).map((entry) => (
                 <li key={entry.id}>
                   <div className="text-base font-medium uppercase tracking-[0.18em] text-live-muted">{entry.guest_name}</div>
-                  <p className="mt-1 line-clamp-2 font-serif text-[calc(1.6*var(--u))] italic leading-snug">{entry.content}</p>
+                  <p className="mt-1 line-clamp-2 font-serif text-[calc(1.6*var(--t))] italic leading-snug">{entry.content}</p>
                 </li>
               ))}
             </ul>
@@ -700,7 +700,7 @@ export default async function LivePage({
         // --u: 1 % ширины 16:9-кадра, вписанного в экран. На проекторе это 1vw,
         // на LED-полосе 3:1 или вертикальной панели считается от высоты —
         // так шрифты стены не раздуваются, когда экран шире, чем выше.
-        "relative h-screen overflow-hidden bg-live text-live-foreground [--u:min(1vw,1.7778vh)]",
+        "relative h-screen overflow-hidden bg-live text-live-foreground [--u:min(1vw,1.7778vh)] [--t:max(var(--u),0.65vw)]",
         showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:min(8.5rem,20vh)]" : "[--bar:min(5.5rem,13vh)]",
       ].join(" ")}
     >

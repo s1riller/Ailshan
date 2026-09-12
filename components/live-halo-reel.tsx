@@ -88,6 +88,11 @@ function Reel({
   const short = size.height > 0 && size.height < 800;
   const cardHeight = short ? Math.max(220, Math.round(size.height * 0.5)) : CARD_HEIGHT;
   const cardWidth = Math.round(cardHeight * CARD_RATIO);
+  // На полосе шире 2:1 кольцо уходит к центру, а подпись остаётся справа;
+  // карточки меньше, поэтому шаг между ними больше — иначе они слипаются.
+  const wideStage = size.width > 0 && size.width / Math.max(size.height, 1) >= 2;
+  const radiusX = wideStage ? (withPanel ? 0.24 : 0.32) : withPanel ? 0.3 : 0.42;
+  const centerX = wideStage ? (withPanel ? 0.42 : 0.28) : withPanel ? 0.3 : 0.02;
 
   return (
     <div ref={ref} className="absolute inset-x-0 top-0 bottom-[var(--bar)] isolate z-0">
@@ -97,10 +102,10 @@ function Reel({
         cardWidth={cardWidth}
         cardHeight={cardHeight}
         minScale={0.32}
-        radiusXRatio={withPanel ? 0.3 : 0.42}
+        radiusXRatio={radiusX}
         radiusYRatio={short ? 0.24 : 0.34}
-        centerXRatio={withPanel ? 0.3 : 0.02}
-        spread={1.15}
+        centerXRatio={centerX}
+        spread={short ? 1.7 : 1.15}
         holdDuration={2600}
         stepDuration={900}
         draggable={false}
@@ -114,15 +119,15 @@ function Reel({
         className="h-full bg-transparent"
         centerLabel={
           <div className="max-w-[28vw] text-left">
-            <div className="text-[calc(0.95*var(--u))] font-medium uppercase tracking-[0.18em] text-live-muted">Снимки гостей</div>
-            <div className="mt-4 font-serif text-[calc(4.2*var(--u))] font-medium leading-[1.02] text-live-foreground">{title}</div>
+            <div className="text-[calc(0.95*var(--t))] font-medium uppercase tracking-[0.18em] text-live-muted">Снимки гостей</div>
+            <div className="mt-4 font-serif text-[calc(4.2*var(--t))] font-medium leading-[1.02] text-live-foreground">{title}</div>
             {caption ? (
               <div className="mt-[calc(2*var(--u))] border-t border-live-foreground/15 pt-[calc(1.2*var(--u))]">
                 {showNames && caption.guestName ? (
-                  <div className="text-[calc(0.85*var(--u))] font-medium uppercase tracking-[0.18em] text-live-muted">{caption.guestName}</div>
+                  <div className="text-[calc(0.85*var(--t))] font-medium uppercase tracking-[0.18em] text-live-muted">{caption.guestName}</div>
                 ) : null}
                 {showMessages && caption.message ? (
-                  <p className="mt-2 line-clamp-3 font-serif text-[calc(1.9*var(--u))] italic leading-snug text-live-foreground">{caption.message}</p>
+                  <p className="mt-2 line-clamp-3 font-serif text-[calc(1.9*var(--t))] italic leading-snug text-live-foreground">{caption.message}</p>
                 ) : null}
               </div>
             ) : null}

@@ -28,11 +28,11 @@ export function LiveWelcome({
       >
         <div className="flex w-full max-w-[86vw] flex-col items-center gap-14 px-8 text-center lg:flex-row lg:items-center lg:justify-between lg:text-left tall:flex-col tall:text-center">
           <div className="max-w-[60vw] tall:max-w-[86vw]">
-            <h1 className="mt-6 font-serif text-[calc(6*var(--u))] font-medium leading-[0.98] text-live-foreground">
+            <h1 className="mt-6 font-serif text-[clamp(calc(6*var(--u)),4.5vw,calc(12*var(--u)))] font-medium leading-[0.98] text-live-foreground">
               {title}
             </h1>
             {subtitle ? (
-              <p className="mt-6 font-serif text-[calc(2.2*var(--u))] italic text-live-muted">
+              <p className="mt-6 font-serif text-[calc(2.2*var(--t))] italic text-live-muted">
                 {subtitle}
               </p>
             ) : null}
@@ -40,7 +40,7 @@ export function LiveWelcome({
           {qrUrl ? (
             <div className="flex shrink-0 flex-col items-center gap-5 wide:gap-3">
               <LiveQr value={qrUrl} size={260} max="46vh" />
-              <p className="max-w-[18rem] text-center text-[calc(1.1*var(--u))] leading-snug text-live-muted">
+              <p className="max-w-[18rem] text-center text-[calc(1.1*var(--t))] leading-snug text-live-muted">
                 {hint}
               </p>
             </div>

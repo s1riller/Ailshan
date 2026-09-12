@@ -30,7 +30,7 @@ export function LivePinnedPhoto({
             <div className="text-lg font-medium uppercase tracking-[0.18em] text-live-muted">{guestName}</div>
           ) : null}
           {showMessages && message ? (
-            <p className="mt-2 max-w-4xl font-serif text-[calc(2.4*var(--u))] italic leading-snug text-live-foreground">{message}</p>
+            <p className="mt-2 max-w-4xl font-serif text-[calc(2.4*var(--t))] italic leading-snug text-live-foreground">{message}</p>
           ) : null}
         </div>
       ) : null}
