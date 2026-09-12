@@ -37,6 +37,22 @@ SERVICE_KEY="$(env_value "$SECRETS_FILE" SUPABASE_SERVICE_ROLE_KEY)"
   || { echo "ERROR: SUPABASE_SERVICE_ROLE_KEY in $SECRETS_FILE is not a JWT (see scripts/supabase.sh keys)"; exit 1; }
 docker network inspect edge >/dev/null 2>&1 || { echo "ERROR: docker network 'edge' does not exist (it is created by the InstaWorker setup: docker network create edge)"; exit 1; }
 
+# API Supabase — на этом же сервере: прибиваем его имя к публичному IP
+# (extra_hosts в compose.yaml), чтобы контейнер не зависел от внешних DNS.
+# IP берётся из .env (SUPABASE_HOST_IP), иначе определяется автоматически.
+SUPABASE_HOST="${SUPABASE_URL#*://}"; SUPABASE_HOST="${SUPABASE_HOST%%:*}"
+SUPABASE_HOST_IP="$(env_value .env SUPABASE_HOST_IP)"
+if [[ -z "$SUPABASE_HOST_IP" ]]; then
+  SUPABASE_HOST_IP="$(curl -4 -s --max-time 5 https://ifconfig.me 2>/dev/null || true)"
+  [[ "$SUPABASE_HOST_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || SUPABASE_HOST_IP="$(dig +short "$SUPABASE_HOST" @1.1.1.1 2>/dev/null | head -n1 || true)"
+fi
+if [[ "$SUPABASE_HOST_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  export SUPABASE_HOST SUPABASE_HOST_IP
+  echo "Supabase API: $SUPABASE_HOST -> $SUPABASE_HOST_IP"
+else
+  echo "WARNING: could not determine the public IP for $SUPABASE_HOST; the container will rely on public DNS (set SUPABASE_HOST_IP in .env to pin it)"
+fi
+
 # Свой Supabase живёт в соседнем compose-проекте (scripts/supabase.sh up);
 # без него приложение поднимется, но каждая страница будет падать.
 KONG_HEALTH="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' supabase-kong 2>/dev/null || true)"
