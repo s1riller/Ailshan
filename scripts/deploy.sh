@@ -23,7 +23,9 @@ docker compose version >/dev/null
 # Значения из примеров (<…>) и опечатки в URL ломают каждый запрос уже после
 # сборки ("Invalid supabaseUrl"), а NEXT_PUBLIC_* ещё и вшиты в образ —
 # дешевле проверить до `docker compose up --build`.
-env_value() { grep -E "^$2=" "$1" | tail -n1 | cut -d= -f2- | tr -d "\"'"; }
+# Отсутствующая переменная — пустая строка, а не ошибка: под set -e/pipefail
+# «ненайденный» grep иначе тихо завершал бы весь скрипт.
+env_value() { { grep -E "^$2=" "$1" || true; } | tail -n1 | cut -d= -f2- | tr -d "\"'"; }
 SUPABASE_URL="$(env_value .env NEXT_PUBLIC_SUPABASE_URL)"
 ANON_KEY="$(env_value .env NEXT_PUBLIC_SUPABASE_ANON_KEY)"
 SERVICE_KEY="$(env_value "$SECRETS_FILE" SUPABASE_SERVICE_ROLE_KEY)"
