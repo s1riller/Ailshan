@@ -1,0 +1,153 @@
+_format_version: '2.1'
+_transform: true
+
+# Шлюз API для своего Supabase. Формат Kong 2.8 (тот же образ, что в локальном
+# стеке CLI), но, в отличие от dev-конфига CLI, с проверкой ключей:
+#   - /auth/v1, /rest/v1 — только с apikey (anon или service_role);
+#   - /storage/v1 — без key-auth: подписанные ссылки на снимки браузер
+#     открывает без заголовков, а сам storage-api проверяет JWT и token сам;
+#   - /pg (pg-meta) — только service_role;
+#   - / (Studio) — basic-auth, и снаружи через Caddy не публикуется вовсе.
+# Плейсхолдеры $SUPABASE_* и $DASHBOARD_* подставляет entrypoint контейнера
+# (eval/echo), поэтому в файле только одинарные кавычки и никаких других `$`.
+
+consumers:
+  - username: DASHBOARD
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+basicauth_credentials:
+  - consumer: DASHBOARD
+    username: '$DASHBOARD_USERNAME'
+    password: '$DASHBOARD_PASSWORD'
+
+services:
+  # Открытые маршруты GoTrue: ссылки из писем и OAuth-колбэки приходят без apikey
+  - name: auth-v1-open
+    _comment: 'Auth: /auth/v1/verify* -> http://auth:9999/verify*'
+    url: http://auth:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+    plugins:
+      - name: cors
+  - name: auth-v1-open-callback
+    _comment: 'Auth: /auth/v1/callback* -> http://auth:9999/callback*'
+    url: http://auth:9999/callback
+    routes:
+      - name: auth-v1-open-callback
+        strip_path: true
+        paths:
+          - /auth/v1/callback
+    plugins:
+      - name: cors
+  - name: auth-v1-open-authorize
+    _comment: 'Auth: /auth/v1/authorize* -> http://auth:9999/authorize*'
+    url: http://auth:9999/authorize
+    routes:
+      - name: auth-v1-open-authorize
+        strip_path: true
+        paths:
+          - /auth/v1/authorize
+    plugins:
+      - name: cors
+
+  # Остальной GoTrue — только с ключом
+  - name: auth-v1
+    _comment: 'Auth: /auth/v1/* -> http://auth:9999/*'
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  # PostgREST
+  - name: rest-v1
+    _comment: 'PostgREST: /rest/v1/* -> http://rest:3000/*'
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  # Storage: без key-auth (см. шапку), JWT проверяет сам storage-api
+  - name: storage-v1
+    _comment: 'Storage: /storage/v1/* -> http://storage:5000/*'
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
+
+  # pg-meta нужен Studio; снаружи — только с сервисным ключом
+  - name: meta
+    _comment: 'pg-meta: /pg/* -> http://meta:8080/*'
+    url: http://meta:8080/
+    routes:
+      - name: meta-all
+        strip_path: true
+        paths:
+          - /pg/
+    plugins:
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+
+  # Studio — всё остальное, под basic-auth
+  - name: dashboard
+    _comment: 'Studio: /* -> http://studio:3000/*'
+    url: http://studio:3000/
+    routes:
+      - name: dashboard-all
+        strip_path: true
+        paths:
+          - /
+    plugins:
+      - name: cors
+      - name: basic-auth
+        config:
+          hide_credentials: true

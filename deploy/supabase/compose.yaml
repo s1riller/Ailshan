@@ -1,0 +1,323 @@
+name: ailshan-supabase
+
+# Свой Supabase на сервере Ailshan: Postgres, Auth (GoTrue), PostgREST и
+# Storage за шлюзом Kong; Studio с pg-meta — по профилю `studio`.
+#
+# Образы — те же теги, что поднимает локальный `supabase start`: с ними
+# проверены все миграции проекта. Realtime, Edge Functions, аналитика,
+# пулер и imgproxy не нужны приложению и не запускаются.
+#
+# Наружу смотрит только Kong — через caddy из проекта InstaWorker (сеть edge)
+# по домену SUPABASE_PUBLIC_URL, и на 127.0.0.1:${KONG_HOST_PORT} для
+# служебных команд с самого сервера (scripts/supabase.sh, SSH-туннель к Studio).
+#
+# Переменные — из файла секретов (scripts/supabase.sh init создаёт его):
+#   docker compose --env-file /opt/ailshan/secrets/supabase.env -f deploy/supabase/compose.yaml …
+# Обычно достаточно scripts/supabase.sh, он передаёт всё сам.
+
+x-dns: &default-dns
+  - 1.1.1.1
+  - 8.8.8.8
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.167
+    container_name: supabase-db
+    restart: unless-stopped
+    shm_size: "256m"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Ключ pgsodium и прочие настройки, которые образ пишет при инициализации
+      - db_config:/etc/postgresql-custom
+      # Скрипты инициализации выполняются один раз, на пустом каталоге данных
+      - ./db/98-webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:ro
+      - ./db/99-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - ./db/99-jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:ro
+    ports:
+      # Только с самого сервера: pg_dump, psql, `supabase db push` через SSH-туннель
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-54322}:5432"
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: 5432
+      POSTGRES_PORT: 5432
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET:?}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1 -p 5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    dns: *default-dns
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.196.0
+    container_name: supabase-auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL:?}/auth/v1
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+
+      # Куда ведут ссылки из писем и куда разрешены редиректы после входа
+      GOTRUE_SITE_URL: ${SITE_URL:?}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL}/**
+      # Регистрация закрыта: ведущего заводит scripts/supabase.sh create-admin
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-true}
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_ISSUER: ${SUPABASE_PUBLIC_URL}/auth/v1
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      # Без подтверждения почты: писем стек не шлёт, пока не настроен SMTP ниже
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-true}
+
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-Ailshan}
+      GOTRUE_MAILER_URLPATHS_INVITE: ${SUPABASE_PUBLIC_URL}/auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${SUPABASE_PUBLIC_URL}/auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${SUPABASE_PUBLIC_URL}/auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${SUPABASE_PUBLIC_URL}/auth/v1/verify
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    dns: *default-dns
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v16.2
+    container_name: supabase-rest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,graphql_public
+      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+      # Админ-порт нужен healthcheck'у `postgrest --ready`
+      PGRST_ADMIN_SERVER_PORT: 3001
+      PGRST_ADMIN_SERVER_HOST: localhost
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    dns: *default-dns
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.72.1
+    container_name: supabase-storage
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY:?}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?}
+      POSTGREST_URL: http://rest:3000
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      # Верхняя планка API; у бакета event-photos свой лимит 10 МБ (миграция)
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      GLOBAL_S3_BUCKET: stub
+      TENANT_ID: stub
+      REGION: stub
+      # Снимки уменьшает браузер до загрузки, а превью делает Next — imgproxy не нужен
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage_data:/var/lib/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5000/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    dns: *default-dns
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  kong:
+    image: public.ecr.aws/supabase/kong:2.8.1
+    container_name: supabase-kong
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${KONG_HOST_PORT:-54321}:8000"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: cors,key-auth,acl,basic-auth,request-transformer
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      KONG_NGINX_WORKER_PROCESSES: "2"
+      # Подставляются в kong.yml при старте
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:?}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?}
+    volumes:
+      - ./kong.yml:/home/kong/temp.yml:ro
+    # Тот же приём, что в официальном self-hosting: шаблон с $-плейсхолдерами
+    # раскрывается через eval, поэтому в kong.yml нет двойных кавычек и чужих `$`.
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+    healthcheck:
+      test: ["CMD-SHELL", "kong health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    dns: *default-dns
+    networks:
+      - default
+      # Через неё caddy проекта InstaWorker проксирует публичный домен API
+      - edge
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # Studio — по желанию: docker compose --profile studio … (scripts/supabase.sh studio)
+  meta:
+    image: public.ecr.aws/supabase/postgres-meta:v0.99.0
+    container_name: supabase-meta
+    restart: unless-stopped
+    profiles: ["studio"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?}
+    healthcheck:
+      test: ["CMD-SHELL", "node --eval=\"fetch('http://127.0.0.1:8080/health').then((r) => {if (!r.ok) throw new Error(r.status)})\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    dns: *default-dns
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  studio:
+    image: public.ecr.aws/supabase/studio:2026.08.24-sha-8ec45b2
+    container_name: supabase-studio
+    restart: unless-stopped
+    profiles: ["studio"]
+    depends_on:
+      meta:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+    environment:
+      HOSTNAME: "0.0.0.0"
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER_READ_WRITE: postgres
+      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
+      PGRST_DB_SCHEMAS: public,graphql_public
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
+      DEFAULT_ORGANIZATION_NAME: Ailshan
+      DEFAULT_PROJECT_NAME: Ailshan
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      # Аналитика (logflare) не запущена — разделы логов выключены
+      ENABLED_FEATURES_LOGS_ALL: "false"
+      NEXT_PUBLIC_ENABLE_LOGS: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "node --eval=\"fetch('http://127.0.0.1:3000/api/platform/profile').then((r) => {if (!r.ok) throw new Error(r.status)})\""]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    dns: *default-dns
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+networks:
+  default:
+  edge:
+    external: true
+
+volumes:
+  db_data:
+  db_config:
+  storage_data:
