@@ -92,6 +92,11 @@ if [[ "$CURRENT_REV" == "$UPSTREAM_REV" && "$CURRENT_STATE" == "$DEPLOYED_STATE"
   echo "No new commit and .env unchanged. Container is already deployed."
 else
   git pull --ff-only
+  # Новые миграции из supabase/migrations — до пересборки приложения, чтобы
+  # свежий код не встретил старую схему. Скрипт идемпотентен.
+  if [[ "$KONG_HEALTH" == "healthy" ]]; then
+    bash "$APP_DIR/scripts/supabase.sh" migrate
+  fi
   docker compose config --quiet
   docker compose up -d --build --remove-orphans
   echo "$(git rev-parse HEAD) $ENV_HASH" > "$DEPLOYED_FILE"

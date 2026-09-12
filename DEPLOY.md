@@ -83,10 +83,11 @@ docker exec ailshan wget -qO- https://supabase.ailshan.jhfasd.space/rest/v1/ -S 
 ## Обновление
 
 `git push` в `main` → таймер `ailshan-update` в течение 10 минут сделает
-`git pull --ff-only` и `docker compose up -d --build` приложения. Новые
-миграции применяются `bash scripts/supabase.sh up` (или `migrate`) — они
-идемпотентны: скрипт ведёт ту же таблицу `supabase_migrations.schema_migrations`,
-что и Supabase CLI, поэтому `supabase db push --db-url postgresql://postgres:<пароль>@127.0.0.1:54322/postgres`
+`git pull --ff-only`, применит новые миграции из `supabase/migrations`
+(`scripts/supabase.sh migrate`, идемпотентно) и пересоберёт приложение
+(`docker compose up -d --build`). Скрипт миграций ведёт ту же таблицу
+`supabase_migrations.schema_migrations`, что и Supabase CLI, поэтому
+`supabase db push --db-url postgresql://postgres:<пароль>@127.0.0.1:54322/postgres`
 через SSH‑туннель тоже подойдёт.
 
 Вручную: `bash scripts/deploy.sh` (`--force` — пересобрать без новых
