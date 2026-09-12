@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { PhotoLightbox, usePhotoLightbox, type LightboxPhoto } from "@/components/photo-lightbox";
 import { HaloReel, type HaloReelItem } from "@/components/ui/halo-reel";
 
 export type ReelPhoto = {
@@ -18,7 +19,7 @@ export type ReelPhoto = {
  * массив карточек создавался заново каждый раз, автопрокрутка перезапускалась
  * бы с рывком. Поэтому список пересобирается только когда меняется набор id.
  * Подпись у переднего снимка обновляется по колбэку кольца, без ререндера
- * самой карусели.
+ * самой карусели. Клик по карточке открывает снимок на весь экран.
  */
 export function LiveHaloReel({
   photos,
@@ -34,6 +35,36 @@ export function LiveHaloReel({
   /** Слева стоит панель конкурса — кольцо смещается правее, чтобы не уйти под неё */
   withPanel?: boolean;
 }) {
+  const lightboxPhotos: LightboxPhoto[] = photos.map((photo) => ({
+    id: photo.id,
+    url: photo.url,
+    guestName: showNames ? photo.guestName : null,
+    message: showMessages ? photo.message : null,
+  }));
+
+  if (photos.length === 0) return null;
+
+  return (
+    <PhotoLightbox photos={lightboxPhotos} size="wall">
+      <Reel photos={photos} title={title} showNames={showNames} showMessages={showMessages} withPanel={withPanel} />
+    </PhotoLightbox>
+  );
+}
+
+function Reel({
+  photos,
+  title,
+  showNames,
+  showMessages,
+  withPanel,
+}: {
+  photos: ReelPhoto[];
+  title: string;
+  showNames: boolean;
+  showMessages: boolean;
+  withPanel: boolean;
+}) {
+  const lightbox = usePhotoLightbox();
   const key = photos.map((photo) => photo.id).join("|");
   const items = useMemo<HaloReelItem[]>(
     () => photos.map((photo) => ({ src: photo.url, alt: photo.message || photo.guestName || "Снимок гостя" })),
@@ -41,9 +72,6 @@ export function LiveHaloReel({
     [key],
   );
   const [front, setFront] = useState<ReelPhoto | null>(photos[0] ?? null);
-
-  if (photos.length === 0) return null;
-
   const caption = front && (showNames || showMessages) ? front : null;
 
   return (
@@ -64,6 +92,10 @@ export function LiveHaloReel({
         pauseOnHover={false}
         cardClassName="rounded-2xl border border-live-foreground/10 bg-live shadow-[0_40px_80px_-30px_rgba(0,0,0,0.8)]"
         onFrontChange={(_, index) => setFront(photos[index] ?? null)}
+        onCardClick={(_, index) => {
+          const photo = photos[index];
+          if (photo) lightbox?.openById(photo.id);
+        }}
         className="h-full bg-transparent"
         centerLabel={
           <div className="max-w-[28vw] text-left">

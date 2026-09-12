@@ -83,6 +83,8 @@ export interface HaloReelProps
   cardClassName?: string;
   /** Called with the item at the front whenever the ring settles on a card. */
   onFrontChange?: (item: HaloReelItem, index: number) => void;
+  /** Click on a card. Cards become buttons and show a pointer cursor. */
+  onCardClick?: (item: HaloReelItem, index: number) => void;
 }
 
 const TAU = Math.PI * 2;
@@ -110,6 +112,7 @@ export function HaloReel({
   showCenterLabel = true,
   cardClassName,
   onFrontChange,
+  onCardClick,
   className,
   style,
   ...props
@@ -351,6 +354,7 @@ export function HaloReel({
           width={cardW}
           height={cardH}
           className={cardClassName}
+          onClick={onCardClick ? () => onCardClick(items[i % count], i % count) : undefined}
           onHoverChange={(hovered) => {
             hoverRef.current = hovered;
           }}
@@ -375,6 +379,7 @@ function WheelCard({
   height,
   decorative,
   className,
+  onClick,
   onHoverChange,
 }: {
   item: HaloReelItem;
@@ -389,6 +394,7 @@ function WheelCard({
   height: number;
   decorative: boolean;
   className?: string;
+  onClick?: () => void;
   onHoverChange: (hovered: boolean) => void;
 }) {
   const cos = useTransform(rotation, (r) => Math.cos(index * step + r));
@@ -409,6 +415,7 @@ function WheelCard({
       aria-hidden={decorative || undefined}
       onPointerEnter={() => onHoverChange(true)}
       onPointerLeave={() => onHoverChange(false)}
+      onClick={onClick}
       style={{
         x,
         y,
@@ -421,7 +428,7 @@ function WheelCard({
         marginLeft: -width / 2,
         marginTop: -height / 2,
       }}
-      className={cn("absolute overflow-hidden shadow-xl", className)}
+      className={cn("absolute overflow-hidden shadow-xl", onClick && "cursor-pointer", className)}
     >
       {item.src ? (
         // eslint-disable-next-line @next/next/no-img-element -- карточки кольца анимируются transform'ом, оптимизатор здесь только мешал бы

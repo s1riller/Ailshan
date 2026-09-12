@@ -7,6 +7,7 @@ import { LiveAutoRefresh } from "@/components/live-auto-refresh";
 import { LiveHaloReel } from "@/components/live-halo-reel";
 import { LivePinnedPhoto } from "@/components/live-pinned-photo";
 import { LiveWelcome } from "@/components/live-welcome";
+import { PhotoLightbox, PhotoLightboxTrigger, type LightboxPhoto } from "@/components/photo-lightbox";
 import { joinMeta } from "@/lib/labels";
 import { safeLiveMode } from "@/lib/live-modes";
 import { formatDate } from "@/lib/utils";
@@ -205,6 +206,7 @@ function ContainedPhoto({ photo, sizes, priority = false }: { photo: LivePhoto; 
 
 function PhotoTile({
   photo,
+  index,
   span,
   sizes,
   priority,
@@ -212,6 +214,8 @@ function PhotoTile({
   showNames,
 }: {
   photo: LivePhoto;
+  /** Позиция в общем списке снимков стены — для открытия на весь экран */
+  index: number;
   span?: string;
   sizes: string;
   priority: boolean;
@@ -227,6 +231,7 @@ function PhotoTile({
       ) : null}
 
       <PhotoCaption photo={photo} showMessages={showMessages} showNames={showNames} />
+      <PhotoLightboxTrigger index={index} className="absolute inset-0 z-10 cursor-pointer" label="Открыть снимок на весь экран" />
     </article>
   );
 }
@@ -266,6 +271,7 @@ function GridGallery({
           <PhotoTile
             key={photo.id}
             photo={photo}
+            index={index}
             span={span}
             sizes={span ? `${tileWidth * 2}vw` : `${tileWidth}vw`}
             priority={index < 8}
@@ -309,11 +315,20 @@ function FeaturedGallery({
       <article className="relative overflow-hidden rounded-xl border border-live-foreground/10 bg-live-foreground/5">
         <ContainedPhoto photo={hero} sizes="75vw" priority />
         <PhotoCaption photo={hero} showMessages={showMessages} showNames={showNames} size="lg" />
+        <PhotoLightboxTrigger index={0} className="absolute inset-0 z-10 cursor-pointer" label="Открыть снимок на весь экран" />
       </article>
 
       <div className="grid gap-3" style={{ gridTemplateRows: `repeat(${side.length}, minmax(0, 1fr))` }}>
-        {side.map((photo) => (
-          <PhotoTile key={photo.id} photo={photo} sizes="25vw" priority showMessages={showMessages} showNames={showNames} />
+        {side.map((photo, position) => (
+          <PhotoTile
+            key={photo.id}
+            photo={photo}
+            index={position + 1}
+            sizes="25vw"
+            priority
+            showMessages={showMessages}
+            showNames={showNames}
+          />
         ))}
       </div>
     </section>
@@ -424,7 +439,7 @@ function WelcomeWall({
     <section className={section}>
       <div className="grid w-full max-w-[100rem] items-center gap-14 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="flex items-start justify-center gap-6">
-          {photos.map((photo) => {
+          {photos.map((photo, index) => {
             const hasCaption = showNames || (showMessages && Boolean(photo.message));
 
             return (
@@ -436,6 +451,7 @@ function WelcomeWall({
                   ].join(" ")}
                 >
                   <ContainedPhoto photo={photo} sizes={single ? "50vw" : "30vw"} priority />
+                  <PhotoLightboxTrigger index={index} className="absolute inset-0 z-10 cursor-pointer" label="Открыть снимок на весь экран" />
                 </div>
 
                 {hasCaption ? (
@@ -913,6 +929,16 @@ export default async function LivePage({
   // В приглашении и на заставке QR стоит по центру — в полосе он бы дублировался
   const qrInBar = qrEnabled && showGallery;
 
+  // Снимки стены для просмотра на весь экран по клику
+  const wallPhotos: LightboxPhoto[] = photos
+    .filter((photo) => photo.signedUrl)
+    .map((photo) => ({
+      id: photo.id,
+      url: photo.signedUrl,
+      guestName: showNames ? photo.guest_name : null,
+      message: showMessages ? photo.message : null,
+    }));
+
   // Снимок, выведенный ведущим на экран крупно
   const pinned = event.live_pinned_upload_id
     ? (photos.find((photo) => photo.id === event.live_pinned_upload_id) ??
@@ -927,6 +953,7 @@ export default async function LivePage({
       ].join(" ")}
     >
       <LiveAutoRefresh />
+      <PhotoLightbox photos={wallPhotos} size="wall">
 
       <style>{`
         @keyframes live-fade {
@@ -1135,6 +1162,7 @@ export default async function LivePage({
       ) : null}
 
       {withPanel ? <LiveContestPanel teams={panelTeams} poll={poll} latest={latestEntries} /> : null}
+      </PhotoLightbox>
 
       {quiz && liveQuizStatus ? (
         <QuizLiveOverlay
