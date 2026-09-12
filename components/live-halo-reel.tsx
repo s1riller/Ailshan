@@ -118,7 +118,7 @@ function Reel({
         }}
         className="h-full bg-transparent"
         centerLabel={
-          <div className="max-w-[28vw] text-left">
+          <div className="max-w-[28cqw] text-left">
             <div className="text-[calc(0.95*var(--t))] font-medium uppercase tracking-[0.18em] text-live-muted">Снимки гостей</div>
             <div className="mt-4 font-serif text-[calc(4.2*var(--t))] font-medium leading-[1.02] text-live-foreground">{title}</div>
             {caption ? (

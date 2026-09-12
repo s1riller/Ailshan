@@ -12,6 +12,7 @@ import { GamesAdminPanel, type PendingEntry } from "@/components/games-admin-pan
 import { QuizAdminPanel } from "@/components/quiz-admin-panel";
 import { EventStatusBadge, UploadStatusBadge } from "@/components/status-badge";
 import { LiveRemote, PinToScreenButton } from "@/components/live-remote";
+import { LiveScreenForm } from "@/components/live-screen-form";
 import { PhotoLightbox, PhotoLightboxTrigger } from "@/components/photo-lightbox";
 import { UploadPreview } from "@/components/upload-preview";
 import { Badge } from "@/components/ui/badge";
@@ -175,7 +176,7 @@ export default async function EventAdminPage({
   const { data: event, error: eventError } = await supabase
     .from("events")
     .select(
-      "id, title, slug, date, location, is_active, guest_intro, thanks_text, live_layout, live_transition, slide_duration_seconds, live_qr_effect, live_qr_interval_seconds, show_messages_on_live, show_names_on_live, show_qr_on_live, auto_approve, max_file_size_mb, custom_slug, brand_name, brand_color, cover_title, archive_enabled, guest_instruction, photo_limit, live_mode, live_pinned_upload_id",
+      "id, title, slug, date, location, is_active, guest_intro, thanks_text, live_layout, live_transition, slide_duration_seconds, live_qr_effect, live_qr_interval_seconds, show_messages_on_live, show_names_on_live, show_qr_on_live, auto_approve, max_file_size_mb, custom_slug, brand_name, brand_color, cover_title, archive_enabled, guest_instruction, photo_limit, live_mode, live_pinned_upload_id, live_screen_width, live_screen_height",
     )
     .eq("id", id)
     .eq("owner_id", user.id)
@@ -702,6 +703,12 @@ export default async function EventAdminPage({
             />
             <dl className="divide-y text-sm">
               {[
+                [
+                  "Экран",
+                  event.live_screen_width && event.live_screen_height
+                    ? `${event.live_screen_width}×${event.live_screen_height}`
+                    : "по окну браузера",
+                ],
                 ["Раскладка", LIVE_LAYOUT_LABEL[event.live_layout ?? "masonry"] ?? event.live_layout],
                 ["Эффект", LIVE_TRANSITION_LABEL[event.live_transition ?? "fade"] ?? event.live_transition],
                 ["Имена гостей", event.show_names_on_live ? "показываются" : "скрыты"],
@@ -722,6 +729,15 @@ export default async function EventAdminPage({
             </Button>
           </section>
         </div>
+
+        <section className="max-w-2xl space-y-4">
+          <SectionHeader
+            eyebrow="Экран зала"
+            title="Разрешение экрана"
+            description="Стена сама подстраивается под пропорцию окна — 16:9, LED-полоса или вертикальная панель. Ручной размер нужен только когда картинку растягивает программа вывода или процессор экрана."
+          />
+          <LiveScreenForm eventId={event.id} width={event.live_screen_width} height={event.live_screen_height} />
+        </section>
         </div>
       ) : null}
 

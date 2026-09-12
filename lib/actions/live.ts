@@ -88,3 +88,46 @@ export async function pinLivePhotoAction(formData: FormData) {
 
   revalidateScreen(parsed.data.eventId, slug);
 }
+
+const screenSchema = z
+  .object({
+    eventId: z.string().uuid(),
+    mode: z.enum(["auto", "manual"]),
+    width: z.coerce.number().int().min(320).max(8192).optional(),
+    height: z.coerce.number().int().min(240).max(8192).optional(),
+  })
+  .refine((value) => value.mode === "auto" || (value.width && value.height), {
+    message: "Укажите ширину и высоту экрана",
+  });
+
+/**
+ * Разрешение экрана зала. «Авто» — стена подстраивается под окно браузера;
+ * ручное значение нужно, когда сигнал растягивается на экран другой
+ * пропорции (LED-полоса 2080×640 с выхода 1920×1080).
+ */
+export async function setLiveScreenAction(formData: FormData) {
+  const parsed = screenSchema.safeParse({
+    eventId: formData.get("eventId"),
+    mode: formData.get("mode"),
+    width: formData.get("width") || undefined,
+    height: formData.get("height") || undefined,
+  });
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Проверьте размер экрана");
+
+  const manual = parsed.data.mode === "manual";
+  const { admin, slug } = await requireOwnedEvent(parsed.data.eventId);
+  const { error } = await admin
+    .from("events")
+    .update({
+      live_screen_width: manual ? parsed.data.width : null,
+      live_screen_height: manual ? parsed.data.height : null,
+    })
+    .eq("id", parsed.data.eventId);
+
+  if (error) {
+    console.error("[live] screen", error);
+    throw new Error("Не удалось сохранить размер экрана. Попробуйте ещё раз.");
+  }
+
+  revalidateScreen(parsed.data.eventId, slug);
+}

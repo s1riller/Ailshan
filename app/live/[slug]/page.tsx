@@ -7,6 +7,7 @@ import { LiveHaloReel } from "@/components/live-halo-reel";
 import { ContainedPhoto, PhotoCaption, WALL_OVERLINE, type LivePhoto } from "@/components/live-photo-tiles";
 import { LiveFeaturedGrid, LiveWallGrid } from "@/components/live-wall-grid";
 import { LivePinnedPhoto } from "@/components/live-pinned-photo";
+import { LiveStage } from "@/components/live-stage";
 import { LiveWelcome } from "@/components/live-welcome";
 import { PhotoLightbox, PhotoLightboxTrigger, type LightboxPhoto } from "@/components/photo-lightbox";
 import { joinMeta } from "@/lib/labels";
@@ -167,15 +168,15 @@ function WelcomeWall({
   withPanel: boolean;
 }) {
   const empty = photos.length === 0;
-  const section = [WALL_SECTION, "flex items-center justify-center", withPanel ? "xl:pl-[30rem]" : ""].join(" ");
+  const section = [WALL_SECTION, "flex items-center justify-center", withPanel ? "stage-xl:pl-[30rem]" : ""].join(" ");
   const single = photos.length === 1;
   const hint = qrEnabled ? "Наведите камеру — первые снимки появятся здесь" : "Первые снимки появятся здесь";
 
   const invitation = (
     <div className={["flex flex-col items-center text-center", empty ? "" : "lg:items-start lg:text-left"].join(" ")}>
-      <h1 className="font-serif text-[clamp(calc(5*var(--u)),4vw,calc(10*var(--u)))] font-medium leading-none">{title}</h1>
+      <h1 className="font-serif text-[clamp(calc(5*var(--u)),4cqw,calc(10*var(--u)))] font-medium leading-none">{title}</h1>
       <span aria-hidden className="mt-10 block h-px w-20 bg-live-foreground/25 wide:mt-6" />
-      {qrEnabled ? <LiveQr value={publicUrl} size={empty ? 220 : 180} max="34vh" className="mt-10 wide:mt-6" /> : null}
+      {qrEnabled ? <LiveQr value={publicUrl} size={empty ? 220 : 180} max="34cqh" className="mt-10 wide:mt-6" /> : null}
       <p className="mt-8 max-w-xl text-[calc(1.4*var(--t))] leading-snug text-live-muted wide:mt-5">{hint}</p>
     </div>
   );
@@ -186,7 +187,7 @@ function WelcomeWall({
 
   return (
     <section className={section}>
-      <div className="grid w-full max-w-[100rem] items-center gap-14 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] tall:grid-cols-1">
+      <div className="grid w-full max-w-[100rem] items-center gap-14 stage-lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] tall:grid-cols-1">
         <div className="flex items-start justify-center gap-6">
           {photos.map((photo, index) => {
             const hasCaption = showNames || (showMessages && Boolean(photo.message));
@@ -196,7 +197,7 @@ function WelcomeWall({
                 <div
                   className={[
                     "relative max-w-full overflow-hidden rounded-xl border border-live-foreground/10 bg-live-foreground/5",
-                    single ? "aspect-[4/3] h-[56vh]" : "aspect-[3/4] h-[52vh]",
+                    single ? "aspect-[4/3] h-[56cqh]" : "aspect-[3/4] h-[52cqh]",
                   ].join(" ")}
                 >
                   <ContainedPhoto photo={photo} sizes={single ? "50vw" : "30vw"} priority />
@@ -271,7 +272,7 @@ function LiveContestPanel({
   const topTeams = teams.slice(0, 3);
 
   return (
-    <aside className="pointer-events-none fixed bottom-[calc(var(--bar)+1.5rem)] left-6 z-40 hidden max-h-[calc(100vh-var(--bar)-3rem)] w-[26rem] overflow-hidden rounded-xl xl:block">
+    <aside className="pointer-events-none fixed bottom-[calc(var(--bar)+1.5rem)] left-6 z-40 hidden max-h-[calc(100cqh-var(--bar)-3rem)] w-[26rem] overflow-hidden rounded-xl stage-xl:block">
       <div className="space-y-6 rounded-xl border border-live-foreground/10 bg-live/85 p-6 backdrop-blur wide:space-y-4 wide:p-5">
         <p className={WALL_OVERLINE}>Конкурс команд</p>
 
@@ -367,7 +368,9 @@ const loadEvent = cache(async (slug: string) => {
       show_names_on_live,
       show_qr_on_live,
       live_mode,
-      live_pinned_upload_id
+      live_pinned_upload_id,
+      live_screen_width,
+      live_screen_height
     `,
     )
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
@@ -694,14 +697,22 @@ export default async function LivePage({
       (await loadPinned(supabase, event.live_pinned_upload_id, event.id)))
     : null;
 
+  // Ручной размер экрана: сцена рисуется в этих пикселях и сжимается под окно
+  const screen =
+    event.live_screen_width && event.live_screen_height
+      ? { width: event.live_screen_width, height: event.live_screen_height }
+      : null;
+
   return (
-    <main
+    <LiveStage
+      screen={screen}
       className={[
-        // --u: 1 % ширины 16:9-кадра, вписанного в экран. На проекторе это 1vw,
-        // на LED-полосе 3:1 или вертикальной панели считается от высоты —
-        // так шрифты стены не раздуваются, когда экран шире, чем выше.
-        "relative h-screen overflow-hidden bg-live text-live-foreground [--u:min(1vw,1.7778vh)] [--t:max(var(--u),0.65vw)]",
-        showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:min(8.5rem,20vh)]" : "[--bar:min(5.5rem,13vh)]",
+        // --u: 1 % ширины 16:9-кадра, вписанного в сцену. На проекторе это 1 %
+        // ширины, на LED-полосе 3:1 или вертикальной панели считается от
+        // высоты — так шрифты стены не раздуваются, когда экран шире, чем выше.
+        // Единицы контейнерные (cqw/cqh): сцена может быть больше окна.
+        "bg-live text-live-foreground [--u:min(1cqw,1.7778cqh)] [--t:max(var(--u),0.65cqw)]",
+        showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:min(8.5rem,20cqh)]" : "[--bar:min(5.5rem,13cqh)]",
       ].join(" ")}
     >
       <LiveAutoRefresh />
@@ -929,6 +940,6 @@ export default async function LivePage({
           teams={liveQuizTeams}
         />
       ) : null}
-    </main>
+    </LiveStage>
   );
 }

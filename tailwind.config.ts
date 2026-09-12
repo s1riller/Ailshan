@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 const config: Config = {
@@ -10,13 +11,6 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      // Экран зала: проектор 16:9, LED-полоса 3:1 или вертикальная панель —
-      // раскладки стены переключаются по пропорции, а не по ширине.
-      screens: {
-        wide: { raw: "(min-aspect-ratio: 2/1)" },
-        ultra: { raw: "(min-aspect-ratio: 3/1)" },
-        tall: { raw: "(max-aspect-ratio: 1/1)" },
-      },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         serif: ["var(--font-serif)", "Times New Roman", "Georgia", "serif"],
@@ -79,7 +73,19 @@ const config: Config = {
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [
+    tailwindcssAnimate,
+    // Экран зала: проектор 16:9, LED-полоса 3:1 или вертикальная панель.
+    // Раскладки стены переключаются по пропорции сцены (container-type: size
+    // на <main>), а не окна: при ручном размере экрана сцена больше окна.
+    plugin(({ addVariant }) => {
+      addVariant("wide", "@container (min-aspect-ratio: 2/1)");
+      addVariant("ultra", "@container (min-aspect-ratio: 3/1)");
+      addVariant("tall", "@container (max-aspect-ratio: 1/1)");
+      addVariant("stage-lg", "@container (min-width: 1024px)");
+      addVariant("stage-xl", "@container (min-width: 1280px)");
+    }),
+  ],
 };
 
 export default config;
