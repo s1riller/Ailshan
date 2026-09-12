@@ -19,6 +19,22 @@ docker compose version >/dev/null
 
 [[ -f .env ]] || { echo "ERROR: $APP_DIR/.env not found (see .env.production.example)"; exit 1; }
 [[ -f "$SECRETS_FILE" ]] || { echo "ERROR: secrets file not found: $SECRETS_FILE (see secrets/ailshan.env.example)"; exit 1; }
+
+# Значения из примеров (<…>) и опечатки в URL ломают каждый запрос уже после
+# сборки ("Invalid supabaseUrl"), а NEXT_PUBLIC_* ещё и вшиты в образ —
+# дешевле проверить до `docker compose up --build`.
+env_value() { grep -E "^$2=" "$1" | tail -n1 | cut -d= -f2- | tr -d "\"'"; }
+SUPABASE_URL="$(env_value .env NEXT_PUBLIC_SUPABASE_URL)"
+ANON_KEY="$(env_value .env NEXT_PUBLIC_SUPABASE_ANON_KEY)"
+SERVICE_KEY="$(env_value "$SECRETS_FILE" SUPABASE_SERVICE_ROLE_KEY)"
+[[ "$SUPABASE_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] \
+  || { echo "ERROR: NEXT_PUBLIC_SUPABASE_URL in .env is not a URL: '$SUPABASE_URL' (expected e.g. https://supabase.ailshan.jhfasd.space — see scripts/supabase.sh keys)"; exit 1; }
+[[ "$SUPABASE_URL" != */ ]] \
+  || { echo "ERROR: NEXT_PUBLIC_SUPABASE_URL must not end with '/': the app appends /storage/v1/… itself"; exit 1; }
+[[ "$ANON_KEY" == eyJ* ]] \
+  || { echo "ERROR: NEXT_PUBLIC_SUPABASE_ANON_KEY in .env is not a JWT (see scripts/supabase.sh keys)"; exit 1; }
+[[ "$SERVICE_KEY" == eyJ* ]] \
+  || { echo "ERROR: SUPABASE_SERVICE_ROLE_KEY in $SECRETS_FILE is not a JWT (see scripts/supabase.sh keys)"; exit 1; }
 docker network inspect edge >/dev/null 2>&1 || { echo "ERROR: docker network 'edge' does not exist (it is created by the InstaWorker setup: docker network create edge)"; exit 1; }
 
 # Свой Supabase живёт в соседнем compose-проекте (scripts/supabase.sh up);
@@ -46,17 +62,21 @@ UPSTREAM_REV="$(git rev-parse '@{upstream}')"
 CONTAINER_ID="$(docker compose ps -q ailshan 2>/dev/null || true)"
 # Что именно собрано в образе: рабочее дерево может обновиться руками, а
 # контейнер остаться на старом коде — сравниваем с отметкой удачной выкатки.
+# В отметке и хеш .env: NEXT_PUBLIC_* вшиты в образ, поэтому правка .env без
+# нового коммита тоже требует пересборки.
 DEPLOYED_FILE="$STATE_DIR/.deployed-commit"
-DEPLOYED_REV="$(cat "$DEPLOYED_FILE" 2>/dev/null || true)"
+DEPLOYED_STATE="$(cat "$DEPLOYED_FILE" 2>/dev/null || true)"
+ENV_HASH="$(sha256sum .env | cut -c1-16)"
+CURRENT_STATE="$CURRENT_REV $ENV_HASH"
 
-if [[ "$CURRENT_REV" == "$UPSTREAM_REV" && "$CURRENT_REV" == "$DEPLOYED_REV" \
+if [[ "$CURRENT_REV" == "$UPSTREAM_REV" && "$CURRENT_STATE" == "$DEPLOYED_STATE" \
       && "$FORCE" != "--force" && -n "$CONTAINER_ID" ]]; then
-  echo "No new commit. Container is already deployed."
+  echo "No new commit and .env unchanged. Container is already deployed."
 else
   git pull --ff-only
   docker compose config --quiet
   docker compose up -d --build --remove-orphans
-  git rev-parse HEAD > "$DEPLOYED_FILE"
+  echo "$(git rev-parse HEAD) $ENV_HASH" > "$DEPLOYED_FILE"
   # Старые слои сборки копятся с каждым деплоем; оставляем только актуальные.
   docker image prune -f --filter "label=com.docker.compose.project=ailshan" >/dev/null || true
 fi
