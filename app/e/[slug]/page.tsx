@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { guestUploadsCookie, parseUploadIds } from "@/lib/guest";
 import { joinMeta } from "@/lib/labels";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { throwIfQueryFailed } from "@/lib/supabase/errors";
 import { formatDate, plural } from "@/lib/utils";
 
 const EVENT_FIELDS =
@@ -34,12 +35,14 @@ function customText(value: string | null | undefined, legacy: string): string | 
 async function loadEvent(rawSlug: string) {
   const slug = decodeURIComponent(rawSlug);
   const supabase = createAdminClient();
-  const { data: event } = await supabase
+  const { data: event, error } = await supabase
     .from("events")
     .select(EVENT_FIELDS)
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .eq("is_active", true)
     .single();
+
+  throwIfQueryFailed(error, "guest/event");
 
   return { event, supabase };
 }

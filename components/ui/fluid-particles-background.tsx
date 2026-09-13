@@ -155,7 +155,12 @@ export const FluidParticlesBackground = ({
 
     resizeCanvas();
 
-    const particles: Particle[] = Array.from({ length: particleCount }, () => ({
+    // Ноутбук у проектора часто слабый: на 4 ядрах и меньше частиц вдвое
+    // меньше — рисунок тот же, а кадр не проседает часами.
+    const cores = navigator.hardwareConcurrency || 4;
+    const count = cores <= 4 ? Math.round(particleCount / 2) : particleCount;
+
+    const particles: Particle[] = Array.from({ length: count }, () => ({
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height,
       size: Math.random() * (sizeMax - sizeMin) + sizeMin,

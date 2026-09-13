@@ -18,6 +18,7 @@ import { QuizLiveOverlay } from "@/components/quiz-live-overlay";
 import { getSiteUrl } from "@/lib/env";
 import { isGamePlayable, loadContest, type ContestTeam } from "@/lib/games/contest";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { throwIfQueryFailed } from "@/lib/supabase/errors";
 
 export const revalidate = 5;
 
@@ -346,7 +347,7 @@ function LiveContestPanel({
 const loadEvent = cache(async (slug: string) => {
   const supabase = createAdminClient();
 
-  const { data: event } = await supabase
+  const { data: event, error } = await supabase
     .from("events")
     .select(
       `
@@ -376,6 +377,8 @@ const loadEvent = cache(async (slug: string) => {
     .or(`slug.eq.${slug},custom_slug.eq.${slug}`)
     .eq("is_active", true)
     .single();
+
+  throwIfQueryFailed(error, "live/event");
 
   return event;
 });
@@ -571,7 +574,7 @@ export default async function LivePage({
     notFound();
   }
 
-  const { data } = await supabase
+  const { data, error: uploadsError } = await supabase
     .from("uploads")
     .select("id, guest_name, message, file_path, created_at")
     .eq("event_id", event.id)
@@ -579,6 +582,7 @@ export default async function LivePage({
     .order("created_at", { ascending: false })
     .limit(MAX_WALL_PHOTOS);
 
+  throwIfQueryFailed(uploadsError, "live/uploads");
   const uploads = data ?? [];
 
   const photos: LivePhoto[] = await Promise.all(
@@ -715,7 +719,7 @@ export default async function LivePage({
         showWelcome ? "[--bar:0rem]" : qrInBar ? "[--bar:min(8.5rem,20cqh)]" : "[--bar:min(5.5rem,13cqh)]",
       ].join(" ")}
     >
-      <LiveAutoRefresh />
+      <LiveAutoRefresh keepAwake />
       <PhotoLightbox photos={wallPhotos} size="wall">
 
       <style>{`
